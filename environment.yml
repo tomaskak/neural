@@ -7,4 +7,3 @@ dependencies:
 - plotly
 - pandas
 - dash
-- multiprocessing
