@@ -1,0 +1,10 @@
+name: neural 
+dependencies:
+- python=3
+- pytest
+- numpy
+- pytorch
+- plotly
+- pandas
+- dash
+- multiprocessing
