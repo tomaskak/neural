@@ -4,6 +4,9 @@ dependencies:
 - pytest
 - numpy
 - pytorch
+- gym
+- pyglet # needed for gym rendering
+- gym[mujoco]
 - plotly
 - pandas
 - dash
