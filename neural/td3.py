@@ -70,37 +70,6 @@ if __name__ == "__main__":
             graph_sink,
         )
 
-        # actor = torch.nn.Sequential(
-        #     OrderedDict([
-        #         ('l_1', torch.nn.Linear(11, 300)),
-        #         ('tanh_1', torch.nn.Tanh()),
-        #         ('l_2', torch.nn.Linear(300, 300)),
-        #         ('tanh_2', torch.nn.Tanh()),
-        #         ('l_out', torch.nn.Linear(300, 1)),
-        #         ('tanh_3', torch.nn.Tanh()),
-        #         ])
-        # )
-
-        # critic_1 = torch.nn.Sequential(
-        #     OrderedDict([
-        #         ('l_1', torch.nn.Linear(12, 300)),
-        #         ('tanh_1', torch.nn.Tanh()),
-        #         ('l_2', torch.nn.Linear(300, 300)),
-        #         ('tanh_2', torch.nn.Tanh()),
-        #         ('l_out', torch.nn.Linear(300, 1)),
-        #         ])
-        # )
-
-        # critic_2 = torch.nn.Sequential(
-        #     OrderedDict([
-        #         ('l_1', torch.nn.Linear(12, 300)),
-        #         ('tanh_1', torch.nn.Tanh()),
-        #         ('l_2', torch.nn.Linear(300, 300)),
-        #         ('tanh_2', torch.nn.Tanh()),
-        #         ('l_out', torch.nn.Linear(300, 1)),
-        #         ])
-        # )
-
         target_actor = Model("target_actor", [], graph_sink)
         target_critic_1 = Model("target_critic_1", [], graph_sink)
         target_critic_2 = Model("target_critic_2", [], graph_sink)
@@ -116,30 +85,6 @@ if __name__ == "__main__":
         target_critic_2.set_sink_hooks()
 
         time.sleep(1.0)
-        # assert False
-
-        # target_actor = copy.deepcopy(actor)
-        # target_critic_1 = copy.deepcopy(critic_1)
-        # target_critic_2 = copy.deepcopy(critic_2)
-
-        # actor_observers.append(QuantileActivationObserver(actor.get_submodule('tanh_1'), graph_sink, "actor", "tanh_1"))
-        # actor_observers.append(QuantileActivationObserver(actor.get_submodule('tanh_2'), graph_sink, "actor", "tanh_2"))
-        # actor_observers.append(QuantileActivationObserver(actor.get_submodule('tanh_3'), graph_sink, "actor", "tanh_3"))
-
-        # critic_observers.append(QuantileActivationObserver(critic_1.get_submodule('tanh_1'), graph_sink, "critic_1", "tanh_1"))
-        # critic_observers.append(QuantileActivationObserver(critic_1.get_submodule('tanh_2'), graph_sink, "critic_1", "tanh_2"))
-
-        # critic_observers.append(QuantileActivationObserver(critic_2.get_submodule('tanh_1'), graph_sink, "critic_2", "tanh_1"))
-        # critic_observers.append(QuantileActivationObserver(critic_2.get_submodule('tanh_2'), graph_sink, "critic_2", "tanh_2"))
-
-        # actor_observers.append(QuantileActivationObserver(target_actor.get_submodule('tanh_1'), graph_sink, "target_actor", "tanh_1"))
-        # actor_observers.append(QuantileActivationObserver(target_actor.get_submodule('tanh_2'), graph_sink, "target_actor", "tanh_2"))
-        # actor_observers.append(QuantileActivationObserver(target_actor.get_submodule('tanh_3'), graph_sink, "target_actor", "tanh_3"))
-
-        # critic_observers.append(QuantileActivationObserver(target_critic_1.get_submodule('tanh_1'), graph_sink, "target_critic_1", "tanh_1"))
-        # critic_observers.append(QuantileActivationObserver(target_critic_1.get_submodule('tanh_2'), graph_sink, "target_critic_1", "tanh_2"))
-        # critic_observers.append(QuantileActivationObserver(target_critic_2.get_submodule('tanh_1'), graph_sink, "target_critic_2", "tanh_1"))
-        # critic_observers.append(QuantileActivationObserver(target_critic_2.get_submodule('tanh_2'), graph_sink, "target_critic_2", "tanh_2"))
 
     reset_models()
     graph_sink.start()

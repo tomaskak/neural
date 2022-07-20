@@ -97,6 +97,8 @@ class ActivationGraph:
         for layer, values in self._agg.items():
             if x_len is None or x_len > len(values["98"]):
                 x_len = len(values["98"])
+        if x_len is None:
+            x_len = 0
 
         x_axis = list(range(x_len))
         for layer, values in self._agg.items():

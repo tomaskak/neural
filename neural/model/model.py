@@ -27,6 +27,7 @@ class Model(torch.nn.Module):
     def layers(self):
         return self._layers
 
+    # TODO: Remove global setting for each model
     def metrics_on(self):
         self._sink.enable()
 
