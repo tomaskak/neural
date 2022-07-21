@@ -46,3 +46,19 @@ class Layer(torch.nn.Module):
 
     def __deepcopy__(self, memo):
         return Layer(deepcopy(self._name, memo), deepcopy(self._mod, memo), self._sink)
+
+
+class Loss:
+    def __init__(self, name, loss_fn, graph_sink=None):
+        self._name = name
+        self._loss_fn = loss_fn
+        self._sink = graph_sink
+
+        if self._sink is not None:
+            self._sink.init_namespace(self._name, "loss")
+
+    def __call__(self, actual, target):
+        loss = self._loss_fn(actual, target)
+        if self._sink is not None:
+            self._sink.push(self._name, "loss", loss.detach())
+        return loss

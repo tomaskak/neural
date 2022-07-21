@@ -9,7 +9,7 @@ from multiprocessing import freeze_support
 
 from util.exp_replay import ExpReplay
 from model.model import Model
-from model.modules import Activation, Layer
+from model.modules import Activation, Layer, Loss
 from tools.sink import Sink
 
 actor = None
@@ -89,6 +89,12 @@ if __name__ == "__main__":
         time.sleep(1.0)
 
     reset_models()
+
+    q_1_loss_fn = Loss("Q_1", torch.nn.MSELoss(), graph_sink)
+    q_2_loss_fn = Loss("Q_2", torch.nn.MSELoss(), graph_sink)
+    value_loss_fn = Loss("Value", torch.nn.MSELoss(), graph_sink)
+    actor_loss_fn = Loss("Actor", lambda x, y: (x - y).mean(), graph_sink)
+
     graph_sink.start()
 
     env = gym.make("InvertedDoublePendulum-v4")
@@ -132,7 +138,7 @@ if __name__ == "__main__":
         return action, log_prob
 
     def update_all(batch):
-        global value, target_value, actor, Q_1, Q_2, ACTOR_LEARNING_RATE, V_LEARNING_RATE, Q_LEARNING_RATE, GAMMA, HIGH, LOW, MID, HALF_LENGTH, TAU
+        global value, target_value, actor, Q_1, Q_2, ACTOR_LEARNING_RATE, V_LEARNING_RATE, Q_LEARNING_RATE, GAMMA, HIGH, LOW, MID, HALF_LENGTH, TAU, q_1_loss_fn, q_2_loss_fn, value_loss_fn, actor_loss_fn
 
         states, actions, rewards, next_states, dones = batch
         Q_1.zero_grad()
@@ -161,8 +167,6 @@ if __name__ == "__main__":
         new_state_actions = torch.cat(
             (torch.tensor(states), new_actions.reshape(-1, 1)), 1
         ).float()
-        # print(f"new_state_actions={new_state_actions}")
-        # print(f"log_probs={log_probs}")
         Q_1.metrics_off()
         Q_2.metrics_off()
 
@@ -183,21 +187,20 @@ if __name__ == "__main__":
         )
         target_qs = target_qs.detach().reshape(-1, 1)
 
-        q_1_loss = torch.nn.MSELoss()(predicted_q_1s, target_qs.float())
-        q_2_loss = torch.nn.MSELoss()(predicted_q_2s, target_qs.float())
+        q_1_loss = q_1_loss_fn(predicted_q_1s, target_qs.float())
+        q_2_loss = q_1_loss_fn(predicted_q_2s, target_qs.float())
 
         q_1_loss.backward()
         q_2_loss.backward()
 
         # Value update
         target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
-        # print(f"predicted_values={predicted_values}, target_vs={target_vs.reshape(-1,1)}")
-        v_loss = torch.nn.MSELoss()(predicted_values, target_vs.float())
+        v_loss = value_loss_fn(predicted_values, target_vs.float())
 
         v_loss.backward()
 
         # Policy update
-        loss = (log_probs.reshape(-1, 1) - predicted_new_qs).mean()
+        loss = actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
         loss.backward()
 
         with torch.no_grad():
