@@ -9,7 +9,7 @@ from multiprocessing import freeze_support
 
 from util.exp_replay import ExpReplay
 from model.model import Model
-from model.modules import Activation, Layer, Loss
+from model.modules import Activation, Layer, Loss, Env
 from tools.sink import Sink
 
 actor = None
@@ -95,9 +95,11 @@ if __name__ == "__main__":
     value_loss_fn = Loss("Value", torch.nn.MSELoss(), graph_sink)
     actor_loss_fn = Loss("Actor", lambda x, y: (x - y).mean(), graph_sink)
 
-    graph_sink.start()
+    env = Env(
+        "InvertedDoublePendulum-v4", gym.make("InvertedDoublePendulum-v4"), graph_sink
+    )
 
-    env = gym.make("InvertedDoublePendulum-v4")
+    graph_sink.start()
 
     GAMMA = 0.995
 
@@ -237,8 +239,8 @@ if __name__ == "__main__":
 
         episode_steps = 0
 
-        HIGH = env.action_space.high.item()
-        LOW = env.action_space.low.item()
+        HIGH = env._env.action_space.high.item()
+        LOW = env._env.action_space.low.item()
         length = HIGH - LOW
         MID = length / 2.0 + LOW
         HALF_LENGTH = length / 2.0
@@ -299,7 +301,9 @@ if __name__ == "__main__":
                 f"showing {COUNT} runs after episode={episode}, curr_max={curr_max}..."
             )
             for i in range(COUNT):
+                graph_sink.enable()
                 observation = env.reset()
+                graph_sink.disable()
 
                 for step in range(STEPS):
                     action = None
@@ -312,7 +316,9 @@ if __name__ == "__main__":
                         )
                         action = norm_params[0]
 
+                    graph_sink.enable()
                     next_observation, reward, done, info = env.step([action])
+                    graph_sink.disable()
 
                     env.render()
                     if (i % (COUNT / 3)) == 0:
@@ -332,3 +338,4 @@ if __name__ == "__main__":
                         break
                     observation = next_observation
             print(f"test phase completed with avg={avg/(COUNT*1.0)} steps!")
+        graph_sink.disable()

@@ -62,3 +62,28 @@ class Loss:
         if self._sink is not None:
             self._sink.push(self._name, "loss", loss.detach())
         return loss
+
+
+class Env:
+    def __init__(self, name, env, graph_sink=None):
+        self._name = name
+        self._env = env
+        self._sink = graph_sink
+
+        self._total_reward = 0.0
+
+        if self._sink is not None:
+            self._sink.init_namespace(self._name, "reward")
+
+    def reset(self):
+        self._sink.push(self._name, "reward", self._total_reward)
+        self._total_reward = 0.0
+        return self._env.reset()
+
+    def step(self, *args, **kwargs):
+        obs, reward, done, info = self._env.step(*args, **kwargs)
+        self._total_reward += reward
+        return obs, reward, done, info
+
+    def render(self, *args, **kwargs):
+        return self._env.render(*args, **kwargs)
