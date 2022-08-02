@@ -17,4 +17,4 @@ This namespace contains implementations of specific algorithms making use of the
 ## Dependency Chain
 A namespace can only depend upon those listed to the left of it:
 
-tools <-- model <-- algos
+util <-- tools <-- model <-- algos

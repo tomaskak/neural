@@ -1,7 +1,7 @@
 import torch
 
 from copy import deepcopy
-from tools.sink import SinkClient
+from neural.tools.sink import SinkClient
 
 
 class Model(torch.nn.Module):

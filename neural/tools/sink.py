@@ -1,6 +1,6 @@
 from torch.multiprocessing import Process, Queue
 
-from tools.app_manager import AppManager
+from neural.tools.app_manager import AppManager
 
 
 def _proc_fn(work_q, done_q):

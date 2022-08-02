@@ -1,6 +1,6 @@
 from dash import Dash, html, dcc
 from dash.dependencies import Input, Output
-from tools.graph_factory import make_graph
+from neural.tools.graph_factory import make_graph
 from threading import Thread
 
 
