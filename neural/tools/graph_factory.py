@@ -1,4 +1,4 @@
-from plotly.graph_objects import Figure, Scatter
+from plotly.graph_objects import Figure, Scatter, Histogram
 import torch
 
 _COLORS = [
@@ -21,6 +21,8 @@ def make_graph(type_name):
         return LossGraph()
     elif type_name == "reward":
         return RewardGraph()
+    elif type_name == "gradient":
+        return GradientGraph()
     else:
         raise ValueError(f"'{type_name}' not supported in make_graph fn")
 
@@ -246,7 +248,7 @@ class RewardGraph:
         }
 
         # TODO: Group rewards, they should be measured per test run so the pusher needs to indicate when to flush.
-        self._FLUSH_LENGTH = 50
+        self._FLUSH_LENGTH = 5
 
         self._next_color_idx = 0
 
@@ -361,4 +363,73 @@ class RewardGraph:
             xaxis_title="updates",
             yaxis_title="[average+-std_dev/min/max/.90/.10]",
         )
+        return fig
+
+
+class GradientGraph:
+    """
+    Manages a set of layers for a histogram of gradient values.
+
+    Each layer should have the same number of values.
+    """
+
+    def __init__(self):
+        self._agg = {}
+        self._colors = {}
+
+        self._NUM_GRADS = 50
+
+        self._next_color_idx = 0
+
+    def _gen_next_rgb(self):
+        global _COLORS
+        color = _COLORS[self._next_color_idx]
+        self._next_color_idx += 1
+        if self._next_color_idx >= len(_COLORS):
+            self._next_color_idx = 0
+        return color
+
+    def push(self, layer_name, data):
+        """
+        data = {
+            'layer_name': {
+                'values': [[] * NUM_GRADS]
+            },
+            ...
+        }
+        each layers will hold NUM_GRADS number of sets of gradients that will correspond to the last NUM_GRADS pushed and use all of these values to plot the histogram.
+        """
+
+        if layer_name not in self._agg:
+            self._agg[layer_name] = [[] * self._NUM_GRADS]
+            self._colors[layer_name] = self._gen_next_rgb()
+
+        self._agg[layer_name].append(data)
+        self._agg[layer_name].pop(0)
+
+    def render(self):
+        fig = Figure()
+
+        # Get the shortest set of data so the x-axis can be defined to this
+        # length.
+        # TODO: Accept variable lengths with default values to fill in values.
+
+        for layer, values in self._agg.items():
+            all_values = []
+            for list_of_values in values:
+                for val in list_of_values:
+                    all_values.append(val)
+
+            color = self._colors[layer]
+
+            fig.add_trace(
+                Histogram(
+                    x=all_values,
+                    opacity=0.75,
+                    name=layer,
+                    histnorm="percent",
+                    xbins=dict(start=-0.25, end=0.25, size=0.0001),
+                )
+            )
+        fig.update_layout(title="Gradients", barmode="overlay")
         return fig

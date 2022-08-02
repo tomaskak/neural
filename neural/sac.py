@@ -5,7 +5,7 @@ import copy
 import time
 
 from collections import OrderedDict
-from multiprocessing import freeze_support
+from torch.multiprocessing import freeze_support
 
 from util.exp_replay import ExpReplay
 from model.model import Model
@@ -32,11 +32,11 @@ if __name__ == "__main__":
         actor = Model(
             "actor",
             [
-                Layer("l_1", torch.nn.Linear(11, 300)),
+                Layer("l_1", torch.nn.Linear(27, 300)),
                 Activation("tanh_1", torch.nn.Tanh()),
                 Layer("l_2", torch.nn.Linear(300, 300)),
                 Activation("tanh_2", torch.nn.Tanh()),
-                Layer("l_out", torch.nn.Linear(300, 2)),
+                Layer("l_out", torch.nn.Linear(300, 16)),
                 Activation("tanh_3", torch.nn.Tanh()),
             ],
             graph_sink,
@@ -45,7 +45,7 @@ if __name__ == "__main__":
         Q_1 = Model(
             "Q_1",
             [
-                Layer("l_1", torch.nn.Linear(12, 300)),
+                Layer("l_1", torch.nn.Linear(35, 300)),
                 Activation("tanh_1", torch.nn.Tanh()),
                 Layer("l_2", torch.nn.Linear(300, 300)),
                 Activation("tanh_2", torch.nn.Tanh()),
@@ -57,7 +57,7 @@ if __name__ == "__main__":
         Q_2 = Model(
             "Q_2",
             [
-                Layer("l_1", torch.nn.Linear(12, 300)),
+                Layer("l_1", torch.nn.Linear(35, 300)),
                 Activation("tanh_1", torch.nn.Tanh()),
                 Layer("l_2", torch.nn.Linear(300, 300)),
                 Activation("tanh_2", torch.nn.Tanh()),
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         value = Model(
             "value",
             [
-                Layer("l_1", torch.nn.Linear(11, 300)),
+                Layer("l_1", torch.nn.Linear(27, 300)),
                 Activation("tanh_1", torch.nn.Tanh()),
                 Layer("l_2", torch.nn.Linear(300, 300)),
                 Activation("tanh_2", torch.nn.Tanh()),
@@ -95,9 +95,10 @@ if __name__ == "__main__":
     value_loss_fn = Loss("Value", torch.nn.MSELoss(), graph_sink)
     actor_loss_fn = Loss("Actor", lambda x, y: (x - y).mean(), graph_sink)
 
-    env = Env(
-        "InvertedDoublePendulum-v4", gym.make("InvertedDoublePendulum-v4"), graph_sink
-    )
+    # env = Env(
+    #     "InvertedDoublePendulum-v4", gym.make("InvertedDoublePendulum-v4"), graph_sink
+    # )
+    env = Env("Ant_v4", gym.make("Ant-v4"), graph_sink)
 
     graph_sink.start()
 
@@ -125,19 +126,35 @@ if __name__ == "__main__":
     def new_replay_buffer(N, state_size):
         # Needs (state, action, reward, next_state, is_terminal)
         state_spec = ("f8", (state_size,))
-        return ExpReplay(N, [state_spec, float, float, state_spec, float])
+        action_spec = ("f8", (8,))
+        return ExpReplay(N, [state_spec, action_spec, float, state_spec, float])
 
-    def get_action(mu, log_sigma):
+    def get_action(norm_params):
         global HIGH, LOW, MID, HALF_LENGTH
 
-        std_normal = torch.distributions.normal.Normal(0, 1)
-        z = std_normal.sample(sample_shape=mu.shape)
-        sigma = torch.exp(log_sigma)
-        action = torch.clamp((mu + sigma * z), min=LOW, max=HIGH)
+        actions = []
+        log_prob = None
+        for i in range(norm_params.shape[1] // 2):
+            first = i * 2
+            mu = norm_params[:, first]
+            log_sigma = norm_params[:, first + 1]
+            std_normal = torch.distributions.normal.Normal(0, 1)
+            z = std_normal.sample(sample_shape=mu.shape)
+            sigma = torch.exp(log_sigma)
+            action = torch.clamp((mu + sigma * z), min=LOW, max=HIGH)
 
-        log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+            if log_prob is None:
+                log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+            else:
+                log_prob *= torch.distributions.normal.Normal(mu, sigma).log_prob(
+                    action
+                )
 
-        return action, log_prob
+            actions.append(action.reshape(-1, 1))
+
+        # print(f"actions={actions}, log_prob={log_prob}")
+        # print(f"actions={torch.cat(actions,dim=-1)}, log_prob={log_prob}")
+        return torch.cat(actions, dim=-1), log_prob
 
     def update_all(batch):
         global value, target_value, actor, Q_1, Q_2, ACTOR_LEARNING_RATE, V_LEARNING_RATE, Q_LEARNING_RATE, GAMMA, HIGH, LOW, MID, HALF_LENGTH, TAU, q_1_loss_fn, q_2_loss_fn, value_loss_fn, actor_loss_fn
@@ -164,11 +181,9 @@ if __name__ == "__main__":
         predicted_q_2s = Q_2.forward(torch.tensor(state_actions).float())
 
         norm_params = actor.forward(torch.tensor(states).float())
-        new_actions, log_probs = get_action(norm_params[:, 0], norm_params[:, 1])
+        new_actions, log_probs = get_action(norm_params)
 
-        new_state_actions = torch.cat(
-            (torch.tensor(states), new_actions.reshape(-1, 1)), 1
-        ).float()
+        new_state_actions = torch.cat((torch.tensor(states), new_actions), 1).float()
         Q_1.metrics_off()
         Q_2.metrics_off()
 
@@ -176,8 +191,6 @@ if __name__ == "__main__":
             Q_1.forward(new_state_actions), Q_2.forward(new_state_actions)
         )
         Q_2.metrics_on()
-
-        loss_fn = torch.nn.MSELoss()
 
         # Q updates
         target_next_state_values = target_value.forward(
@@ -190,7 +203,7 @@ if __name__ == "__main__":
         target_qs = target_qs.detach().reshape(-1, 1)
 
         q_1_loss = q_1_loss_fn(predicted_q_1s, target_qs.float())
-        q_2_loss = q_1_loss_fn(predicted_q_2s, target_qs.float())
+        q_2_loss = q_2_loss_fn(predicted_q_2s, target_qs.float())
 
         q_1_loss.backward()
         q_2_loss.backward()
@@ -226,7 +239,7 @@ if __name__ == "__main__":
         value.metrics_off()
         target_value.metrics_off()
 
-    SHOW = 100
+    SHOW = 25
 
     observation = env.reset()
 
@@ -239,8 +252,10 @@ if __name__ == "__main__":
 
         episode_steps = 0
 
-        HIGH = env._env.action_space.high.item()
-        LOW = env._env.action_space.low.item()
+        # HIGH = env._env.action_space.high.item()
+        # LOW = env._env.action_space.low.item()
+        HIGH = 1.0
+        LOW = -1.0
         length = HIGH - LOW
         MID = length / 2.0 + LOW
         HALF_LENGTH = length / 2.0
@@ -254,19 +269,20 @@ if __name__ == "__main__":
             action = None
             with torch.no_grad():
                 norm_params = actor.forward(
-                    torch.tensor(np.array(observation), dtype=float).float()
+                    torch.tensor([observation], dtype=float).float()
                 )
-                normal = torch.distributions.normal.Normal(
-                    norm_params[0], torch.exp(norm_params[1])
-                )
-                action = torch.clamp(normal.sample(), min=LOW, max=HIGH)
+                # normal = torch.distributions.normal.Normal(
+                #     norm_params[0], torch.exp(norm_params[1])
+                # )
+                # action = torch.clamp(normal.sample(), min=LOW, max=HIGH)
+                action, _ = get_action(norm_params)
 
-            next_observation, reward, done, info = env.step([action])
+            next_observation, reward, done, info = env.step(action[0].numpy())
 
             replay.push(
                 [
                     observation,
-                    action.item(),
+                    action,
                     reward,
                     next_observation,
                     0.0 if done else 1.0,
@@ -294,7 +310,7 @@ if __name__ == "__main__":
         # print(f"episode finished in {episode_steps}, curr_max={curr_max}")
 
         if (episode + 1) % SHOW == 0:
-            COUNT = 50
+            COUNT = 5
             avg = 0.0
             local_max = 0
             print(
@@ -309,15 +325,16 @@ if __name__ == "__main__":
                     action = None
                     with torch.no_grad():
                         norm_params = actor.forward(
-                            torch.tensor(np.array(observation), dtype=float).float()
+                            torch.tensor([observation], dtype=float).float()
                         )
-                        normal = torch.distributions.normal.Normal(
-                            norm_params[0], torch.exp(norm_params[1])
-                        )
-                        action = norm_params[0]
+                        # normal = torch.distributions.normal.Normal(
+                        #     norm_params[0], torch.exp(norm_params[1])
+                        # )
+                        # action = norm_params[0]
+                        action, _ = get_action(norm_params)
 
                     graph_sink.enable()
-                    next_observation, reward, done, info = env.step([action])
+                    next_observation, reward, done, info = env.step(action[0].numpy())
                     graph_sink.disable()
 
                     env.render()

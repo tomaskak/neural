@@ -37,7 +37,21 @@ class Layer(torch.nn.Module):
 
     def hook_data_sink(self, sink_client):
         self._sink = sink_client
-        # self._sink.init_namespace(self._name, 'layer_output')
+        self._sink.init_namespace(self._name, "gradient")
+
+        hook_args = {"param_count": 0, "grads": []}
+
+        def _grad_hook(gradient):
+            hook_args["grads"].append(gradient.flatten())
+            if len(hook_args["grads"]) == hook_args["param_count"]:
+                # print(f"{hook_args}")
+                out = torch.cat(hook_args["grads"])
+                hook_args["grads"] = []
+                self._sink.push(self._name, "gradient", out)
+
+        for name, param in self._mod.named_parameters():
+            hook_args["param_count"] += 1
+            param.register_hook(_grad_hook)
 
     def forward(self, x):
         out = self._mod.forward(x)

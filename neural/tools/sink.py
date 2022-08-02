@@ -1,4 +1,4 @@
-from multiprocessing import Process, Queue
+from torch.multiprocessing import Process, Queue
 
 from tools.app_manager import AppManager
 
