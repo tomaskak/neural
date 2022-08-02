@@ -1,1 +1,1 @@
-from neural import util, tools, model
+from .. import util, tools, model
