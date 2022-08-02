@@ -1,0 +1,12 @@
+name: neural 
+dependencies:
+- python=3
+- pytest
+- numpy
+- pytorch
+- gym
+- pyglet # needed for gym rendering
+- gym[mujoco]
+- plotly
+- pandas
+- dash
