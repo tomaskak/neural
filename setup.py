@@ -8,7 +8,7 @@ setuptools.setup(
     description="AI utilities",
     url="https://github.com/tomaskak/neural.git",
     license="MIT",
-    packages=["neural"],
+    packages=setuptools.find_packages(),
     install_requires=[
         "numpy",
         "torch",
