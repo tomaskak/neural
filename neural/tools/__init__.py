@@ -1,1 +1,1 @@
-from neural.tools.sink import Sink, SinkClient
+from ..tools.sink import Sink, SinkClient
