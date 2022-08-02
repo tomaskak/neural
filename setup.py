@@ -9,4 +9,4 @@ setuptools.setup(
     url='https://github.com/tomaskak/neural.git',
     licence='MIT',
     packages=['neural'],
-    install_requires=['numpy', 'pytorch', 'gym', 'pyglet', 'gym[mujoco]', 'plotly', 'pandas', 'dash'])
+    install_requires=['numpy', 'torch', 'gym', 'pyglet', 'gym[mujoco]', 'plotly', 'pandas', 'dash'])
