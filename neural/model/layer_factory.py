@@ -5,7 +5,7 @@ from re import split
 from torch import nn
 
 # The format of layer_defs are a list of layers ordered as they should be
-# ordered in the network. Each element will be a tuple of size 3 that has
+# ordered in the network. Each element will be a tuple of size 4 that has
 # elements (name, type, in_size, out_size)
 #
 # name - Names the layer, can be any arbitrary name but should be unique to
@@ -23,7 +23,9 @@ from torch import nn
 # equation strings -- Strings that can be parsed into a valid equation that supports
 #                     addition, subtraction, multiplication, and division. Also the
 #                     keywords 'input' and 'output' will be replaced with the models
-#                     input size and final output size respectively.
+#                     input size and final output size respectively. Output size is the
+#                     number of actions and does not account for continous actions where
+#                     one may have two values for a distribution defining one action.
 #                     Note: Division will round down to nearest int.
 #
 #                     ex. "input*2+1", input_size=3, will use size 7.
@@ -83,7 +85,7 @@ def equation_str_to_int(in_size: int, out_size: int, equation: str) -> int:
         elif not t.isnumeric() and t not in ["+", "-", "*", "/"]:
             raise ValueError(f'Bad keyword "{t}" found in {equation}')
 
-        # When addition or subtraction is found the term preceding it is finished andcan be evaluated.
+        # When addition or subtraction is found the term preceding it is finished and can be evaluated.
         if t == "+" or t == "-":
             if first_term is None:
                 first_term = compute_stack(term_stack)

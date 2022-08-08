@@ -11,8 +11,24 @@ import numpy as np
 
 
 def get_action(norm_params, LOW, HIGH):
+    """
+    Get the action values from the norm_params passed in.
+
+    norm_params can represent multiple sets of actions, but each set must
+    be even as each pair of elements in the set are assumed to be a mu and
+    sigma in a normal distribution.
+
+    Each mu and sigma will be used to sample a normal distribution to get an
+    action value. Additionally the log probability of the actions selected will
+    be returned.
+
+    Returns: [ [action0, action1, ..., actionN], ... ] ,
+             [ log(P(action0)) + log(P(action1)) ... + log(P(actionN)), ... ]
+    """
+
     actions = []
     log_prob = None
+    # Iterate over each pair of mu and sigma.
     for i in range(norm_params.shape[1] // 2):
         first = i * 2
         mu = norm_params[:, first]
@@ -25,18 +41,19 @@ def get_action(norm_params, LOW, HIGH):
         if log_prob is None:
             log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
         else:
-            log_prob *= torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+            log_prob += torch.distributions.normal.Normal(mu, sigma).log_prob(action)
 
         actions.append(action.reshape(-1, 1))
 
-    # print(f"actions={actions}, log_prob={log_prob}")
-    # print(f"actions={torch.cat(actions,dim=-1)}, log_prob={log_prob}")
     return torch.cat(actions, dim=-1), log_prob
 
 
 class SoftActorCritic(Algo):
-    # This variable is used to check if the argument passed in contains all recognized
-    # keys.
+    """
+    SoftActorCritic is an off-policy actor-critic algorithm that incorporates entropy
+    maximization into its objective function leading to improved exploration characteristics.
+    """
+
     defined_hypers = {
         "future_reward_discount": float,
         "q_lr": float,
@@ -47,8 +64,8 @@ class SoftActorCritic(Algo):
         "minibatch_size": int,
     }
 
-    # The algorithm has an additional model for target_value but this by
-    # definition must be the same set up as value.
+    # The algorithm has a model not listed here for 'target_value' but this by
+    # definition must be the same configuration as 'value'.
     required_model_defs = ["actor", "q_1", "q_2", "value"]
 
     def __init__(self, hypers: dict, layers: list, training_params: dict, env):
@@ -69,7 +86,6 @@ class SoftActorCritic(Algo):
         ), f"Unexpected model defined, expected={required_model_defs}"
 
         in_size, out_size = env_to_in_out_sizes(env)
-        print(f"in_size={in_size}, out_size={out_size}")
 
         self._actor = Model(
             "actor", to_layers(in_size, out_size, layers["actor"]), None  # graph_sink
@@ -106,6 +122,11 @@ class SoftActorCritic(Algo):
             self._replay_size, [state_spec, action_spec, float, state_spec, float]
         )
 
+        self._q_1_loss_fn = torch.nn.MSELoss()
+        self._q_2_loss_fn = torch.nn.MSELoss()
+        self._value_loss_fn = torch.nn.MSELoss()
+        self._actor_loss_fn = lambda x, y: (x - y).mean()
+
     @classmethod
     def defined_hyperparams(cls) -> dict:
         return SoftActorCritic.defined_hypers
@@ -122,7 +143,7 @@ class SoftActorCritic(Algo):
                 action = None
                 with torch.no_grad():
                     norm_params = self._actor.forward(
-                        torch.tensor([observation]).float()
+                        torch.tensor(np.array([observation])).float()
                     )
                     # TODO: Use env's definition of max action values
                     action, _ = get_action(norm_params, LOW=-1.0, HIGH=1.0)
@@ -153,10 +174,6 @@ class SoftActorCritic(Algo):
                     self.update_all(batch)
 
     def update_all(self, batch):
-        q_1_loss_fn = torch.nn.MSELoss()
-        q_2_loss_fn = torch.nn.MSELoss()
-        value_loss_fn = torch.nn.MSELoss()
-        actor_loss_fn = lambda x, y: (x - y).mean()
 
         states, actions, rewards, next_states, dones = batch
         self._q_1.zero_grad()
@@ -170,8 +187,8 @@ class SoftActorCritic(Algo):
         ).float()
 
         predicted_values = self._value.forward(torch.tensor(states).float())
-        predicted_q_1s = self._q_1.forward(torch.tensor(state_actions).float())
-        predicted_q_2s = self._q_2.forward(torch.tensor(state_actions).float())
+        predicted_q_1s = self._q_1.forward(state_actions)
+        predicted_q_2s = self._q_2.forward(state_actions)
 
         norm_params = self._actor.forward(torch.tensor(states).float())
         new_actions, log_probs = get_action(norm_params, LOW=-1.0, HIGH=1.0)
@@ -192,20 +209,20 @@ class SoftActorCritic(Algo):
         )
         target_qs = target_qs.detach().reshape(-1, 1)
 
-        q_1_loss = q_1_loss_fn(predicted_q_1s, target_qs.float())
-        q_2_loss = q_2_loss_fn(predicted_q_2s, target_qs.float())
+        q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())
+        q_2_loss = self._q_2_loss_fn(predicted_q_2s, target_qs.float())
 
         q_1_loss.backward()
         q_2_loss.backward()
 
         # Value update
         target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
-        v_loss = value_loss_fn(predicted_values, target_vs.float())
+        v_loss = self._value_loss_fn(predicted_values, target_vs.float())
 
         v_loss.backward()
 
         # Policy update
-        loss = actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
+        loss = self._actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
         loss.backward()
 
         with torch.no_grad():
@@ -241,7 +258,7 @@ class SoftActorCritic(Algo):
                 action = None
                 with torch.no_grad():
                     norm_params = self._actor.forward(
-                        torch.tensor([observation]).float()
+                        torch.tensor(np.array([observation])).float()
                     )
                     action, _ = get_action(norm_params, LOW=-1.0, HIGH=1.0)
 

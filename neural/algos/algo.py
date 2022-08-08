@@ -20,18 +20,6 @@ class Algo(ABC):
             ):
                 raise ValueError(f"Bad hyperparameter value for {key}")
 
-    @property
-    def hyperparams(self):
-        return self._hypers
-
-    @property
-    def training_params(self):
-        return self._training_params
-
-    @property
-    def env(self):
-        return self._env
-
     @classmethod
     @abstractmethod
     def defined_hyperparams(cls) -> dict:
