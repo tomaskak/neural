@@ -4,6 +4,8 @@ from neural.model.modules import Activation, Layer
 
 import torch
 
+import pytest
+
 
 class TestModel:
     def test_model_forward(self):
