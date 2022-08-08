@@ -132,8 +132,9 @@ class SoftActorCritic(Algo):
         return SoftActorCritic.defined_hypers
 
     def train(self):
-        EPISODES = 100
-        STEPS = 200
+        EPISODES = self._training_params.get("episodes_per_training", 10)
+        STEPS = self._training_params.get("max_steps", 200)
+        ALL_UPDATE = self._training_params.get("steps_between_updates", 1)
 
         total_steps = 0
         for episode in range(EPISODES):
@@ -165,7 +166,6 @@ class SoftActorCritic(Algo):
                 if done or step == STEPS - 1:
                     break
 
-                ALL_UPDATE = 1
                 if (
                     len(self._replay_buffer) > self._mini_batch_size * 5
                     and total_steps % ALL_UPDATE == 0
@@ -247,8 +247,8 @@ class SoftActorCritic(Algo):
     def test(self, render=False) -> dict:
         result = {"average": 0, "max": None, "min": None}
 
-        STEPS = 200
-        EPISODES = 10
+        STEPS = self._training_params.get("max_steps", 200)
+        EPISODES = self._training_params.get("episodes_per_test", 10)
 
         total_reward = 0
         for i in range(EPISODES):
