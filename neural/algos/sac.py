@@ -1,0 +1,272 @@
+from ..algos.algo import Algo
+from ..model.model import Model
+from ..model.layer import Layer
+from ..model.layer_factory import to_layers, env_to_in_out_sizes
+from ..util.exp_replay import ExpReplay
+
+from copy import deepcopy
+
+import torch
+import numpy as np
+
+
+def get_action(norm_params, LOW, HIGH):
+    actions = []
+    log_prob = None
+    for i in range(norm_params.shape[1] // 2):
+        first = i * 2
+        mu = norm_params[:, first]
+        log_sigma = norm_params[:, first + 1]
+        std_normal = torch.distributions.normal.Normal(0, 1)
+        z = std_normal.sample(sample_shape=mu.shape)
+        sigma = torch.exp(log_sigma)
+        action = torch.clamp((mu + sigma * z), min=LOW, max=HIGH)
+
+        if log_prob is None:
+            log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+        else:
+            log_prob *= torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+
+        actions.append(action.reshape(-1, 1))
+
+    # print(f"actions={actions}, log_prob={log_prob}")
+    # print(f"actions={torch.cat(actions,dim=-1)}, log_prob={log_prob}")
+    return torch.cat(actions, dim=-1), log_prob
+
+
+class SoftActorCritic(Algo):
+    # This variable is used to check if the argument passed in contains all recognized
+    # keys.
+    defined_hypers = {
+        "future_reward_discount": float,
+        "q_lr": float,
+        "v_lr": float,
+        "actor_lr": float,
+        "target_update_step": float,
+        "experience_replay_size": int,
+        "minibatch_size": int,
+    }
+
+    # The algorithm has an additional model for target_value but this by
+    # definition must be the same set up as value.
+    required_model_defs = ["actor", "q_1", "q_2", "value"]
+
+    def __init__(self, hypers: dict, layers: list, training_params: dict, env):
+        """
+        layers is the definition for each model.
+
+        layers = {
+            'actor' : [ <list of layer defintions> ],
+            ...
+        }
+        """
+        super().__init__(hypers, training_params, env)
+
+        for model in SoftActorCritic.required_model_defs:
+            assert model in layers, f"definition for {model} not provided in {layers}"
+        assert len(SoftActorCritic.required_model_defs) == len(
+            layers
+        ), f"Unexpected model defined, expected={required_model_defs}"
+
+        in_size, out_size = env_to_in_out_sizes(env)
+        print(f"in_size={in_size}, out_size={out_size}")
+
+        self._actor = Model(
+            "actor", to_layers(in_size, out_size, layers["actor"]), None  # graph_sink
+        )
+
+        self._q_1 = Model("q_1", to_layers(in_size, out_size, layers["q_1"]), None)
+
+        self._q_2 = Model(
+            "q_2",
+            to_layers(in_size, out_size, layers["q_2"]),
+            None,
+        )
+
+        self._value = Model(
+            "value",
+            to_layers(in_size, out_size, layers["value"]),
+            None,
+        )
+
+        self._target_value = Model("target_value", [], None)
+        self._target_value._layers = deepcopy(self._value.layers())
+
+        self._gamma = hypers.get("future_reward_discount", 0.99)
+        self._q_lr = hypers.get("q_lr", 0.001)
+        self._v_lr = hypers.get("v_lr", 0.001)
+        self._actor_lr = hypers.get("actor_lr", 0.001)
+        self._alpha = hypers.get("target_update_step", 0.001)
+        self._replay_size = hypers.get("experience_replay_size", 1000 * 1000)
+        self._mini_batch_size = hypers.get("minibatch_size", 64)
+
+        state_spec = ("f8", (in_size,))
+        action_spec = ("f8", (out_size,))
+        self._replay_buffer = ExpReplay(
+            self._replay_size, [state_spec, action_spec, float, state_spec, float]
+        )
+
+    @classmethod
+    def defined_hyperparams(cls) -> dict:
+        return SoftActorCritic.defined_hypers
+
+    def train(self):
+        EPISODES = 100
+        STEPS = 200
+
+        total_steps = 0
+        for episode in range(EPISODES):
+            observation = self._env.reset()
+            for step in range(STEPS):
+                total_steps += 1
+                action = None
+                with torch.no_grad():
+                    norm_params = self._actor.forward(
+                        torch.tensor([observation]).float()
+                    )
+                    # TODO: Use env's definition of max action values
+                    action, _ = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+
+                next_observation, reward, done, info = self._env.step(action[0].numpy())
+
+                self._replay_buffer.push(
+                    [
+                        observation,
+                        action,
+                        reward,
+                        next_observation,
+                        0.0 if done else 1.0,
+                    ]
+                )
+
+                observation = next_observation
+
+                if done or step == STEPS - 1:
+                    break
+
+                ALL_UPDATE = 1
+                if (
+                    len(self._replay_buffer) > self._mini_batch_size * 5
+                    and total_steps % ALL_UPDATE == 0
+                ):
+                    batch = self._replay_buffer.sample(self._mini_batch_size)
+                    self.update_all(batch)
+
+    def update_all(self, batch):
+        q_1_loss_fn = torch.nn.MSELoss()
+        q_2_loss_fn = torch.nn.MSELoss()
+        value_loss_fn = torch.nn.MSELoss()
+        actor_loss_fn = lambda x, y: (x - y).mean()
+
+        states, actions, rewards, next_states, dones = batch
+        self._q_1.zero_grad()
+        self._q_2.zero_grad()
+        self._actor.zero_grad()
+        self._value.zero_grad()
+        self._target_value.zero_grad()
+
+        state_actions = torch.tensor(
+            np.concatenate((states, np.vstack(actions)), axis=1), requires_grad=False
+        ).float()
+
+        predicted_values = self._value.forward(torch.tensor(states).float())
+        predicted_q_1s = self._q_1.forward(torch.tensor(state_actions).float())
+        predicted_q_2s = self._q_2.forward(torch.tensor(state_actions).float())
+
+        norm_params = self._actor.forward(torch.tensor(states).float())
+        new_actions, log_probs = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+
+        new_state_actions = torch.cat((torch.tensor(states), new_actions), 1).float()
+
+        predicted_new_qs = torch.minimum(
+            self._q_1.forward(new_state_actions), self._q_2.forward(new_state_actions)
+        )
+
+        # Q updates
+        target_next_state_values = self._target_value.forward(
+            torch.tensor(next_states).float()
+        ).reshape(1, -1)
+        target_qs = (
+            torch.tensor(rewards)
+            + torch.tensor(dones) * self._gamma * target_next_state_values
+        )
+        target_qs = target_qs.detach().reshape(-1, 1)
+
+        q_1_loss = q_1_loss_fn(predicted_q_1s, target_qs.float())
+        q_2_loss = q_2_loss_fn(predicted_q_2s, target_qs.float())
+
+        q_1_loss.backward()
+        q_2_loss.backward()
+
+        # Value update
+        target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
+        v_loss = value_loss_fn(predicted_values, target_vs.float())
+
+        v_loss.backward()
+
+        # Policy update
+        loss = actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
+        loss.backward()
+
+        with torch.no_grad():
+            for params in self._q_1.parameters():
+                params -= self._q_lr * params.grad
+
+            for params in self._q_2.parameters():
+                params -= self._q_lr * params.grad
+
+            for params in self._value.parameters():
+                params -= self._v_lr * params.grad
+
+            for params in self._actor.parameters():
+                # Subtract because we wish to minimize divergence.
+                params -= self._actor_lr * params.grad
+
+            for target, update in zip(
+                self._target_value.parameters(), self._value.parameters()
+            ):
+                target.copy_(self._alpha * update + (1.0 - self._alpha) * target)
+
+    def test(self, render=False) -> dict:
+        result = {"average": 0, "max": None, "min": None}
+
+        STEPS = 200
+        EPISODES = 10
+
+        total_reward = 0
+        for i in range(EPISODES):
+            observation = self._env.reset()
+            current_total_reward = 0
+            for step in range(STEPS):
+                action = None
+                with torch.no_grad():
+                    norm_params = self._actor.forward(
+                        torch.tensor([observation]).float()
+                    )
+                    action, _ = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+
+                    next_observation, reward, done, info = self._env.step(
+                        action[0].numpy()
+                    )
+                    current_total_reward += reward
+
+                    if render and i == EPISODES - 1:
+                        self._env.render()
+
+                    if done or step == STEPS - 1:
+                        total_reward += current_total_reward
+                        if (
+                            result["max"] is None
+                            or current_total_reward > result["max"]
+                        ):
+                            result["max"] = current_total_reward
+                        if (
+                            result["min"] is None
+                            or current_total_reward < result["min"]
+                        ):
+                            result["min"] = current_total_reward
+                        break
+                    observation = next_observation
+        result["average"] = total_reward / EPISODES
+
+        return result
