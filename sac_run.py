@@ -33,12 +33,18 @@ if __name__ == "__main__":
             ("l3", "linear", "input*3", 1),
         ],
     }
-    training_params = {}
+    training_params = {
+        "episodes_per_training": 20,
+        "max_steps": 200,
+        "steps_between_updates": 1,
+        "episodes_per_test": 10,
+        "training_iterations": 400,
+    }
 
     env = gym.make("InvertedPendulum-v4")
     sac = SoftActorCritic(hypers, layers, training_params, env)
 
-    for i in range(400):
+    for i in range(training_params["training_iterations"]):
         print(f"train-{i}")
         sac.train()
         print(f"test-{i}")
