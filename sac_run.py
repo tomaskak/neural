@@ -42,16 +42,17 @@ if __name__ == "__main__":
         "steps_between_updates": 1,
         "episodes_per_test": 10,
         "training_iterations": 400,
+        "device": "mps",
     }
 
-    env = gym.make("InvertedPendulum-v4")
+    env = gym.make("MountainCarContinuous-v0")
     sac = SoftActorCritic(hypers, layers, training_params, env)
 
     for i in range(training_params["training_iterations"]):
         with timer(f"training"):
             sac.train()
         with timer(f"test"):
-            test_results = sac.test(render=i >= 20)
+            test_results = sac.test(render=False)
         print(f"iteration-{i} results={test_results}")
 
     print("DONE!")

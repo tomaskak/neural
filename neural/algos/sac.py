@@ -11,7 +11,7 @@ import torch
 import numpy as np
 
 
-def get_action(norm_params, LOW, HIGH):
+def get_action(norm_params, LOW, HIGH, device):
     """
     Get the action values from the norm_params passed in.
 
@@ -37,7 +37,8 @@ def get_action(norm_params, LOW, HIGH):
         std_normal = torch.distributions.normal.Normal(0, 1)
         z = std_normal.sample(sample_shape=mu.shape)
         sigma = torch.exp(log_sigma)
-        action = torch.clamp((mu + sigma * z), min=LOW, max=HIGH)
+
+        action = torch.clamp((mu + sigma * z.to(device)), min=LOW, max=HIGH)
 
         if log_prob is None:
             log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
@@ -79,6 +80,7 @@ class SoftActorCritic(Algo):
         }
         """
         super().__init__(hypers, training_params, env)
+        self._device = training_params.get("device", "cpu")
 
         for model in SoftActorCritic.required_model_defs:
             assert model in layers, f"definition for {model} not provided in {layers}"
@@ -128,6 +130,12 @@ class SoftActorCritic(Algo):
         self._value_loss_fn = torch.nn.MSELoss()
         self._actor_loss_fn = lambda x, y: (x - y).mean()
 
+        self._actor.to(self._device)
+        self._q_1.to(self._device)
+        self._q_2.to(self._device)
+        self._value.to(self._device)
+        self._target_value.to(self._device)
+
     @classmethod
     def defined_hyperparams(cls) -> dict:
         return SoftActorCritic.defined_hypers
@@ -145,17 +153,23 @@ class SoftActorCritic(Algo):
                 action = None
                 with torch.no_grad():
                     norm_params = self._actor.forward(
-                        torch.tensor(np.array([observation])).float()
+                        torch.tensor(
+                            np.array([observation]), device=self._device
+                        ).float()
                     )
                     # TODO: Use env's definition of max action values
-                    action, _ = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+                    action, _ = get_action(
+                        norm_params, LOW=-1.0, HIGH=1.0, device=self._device
+                    )
 
-                next_observation, reward, done, info = self._env.step(action[0].numpy())
+                next_observation, reward, done, info = self._env.step(
+                    action[0].cpu().numpy()
+                )
 
                 self._replay_buffer.push(
                     [
                         observation,
-                        action,
+                        action.cpu(),
                         reward,
                         next_observation,
                         0.0 if done else 1.0,
@@ -178,6 +192,12 @@ class SoftActorCritic(Algo):
 
         with timer("minibatch-forward"):
             states, actions, rewards, next_states, dones = batch
+            states = states.astype(np.float32)
+            actions = actions.astype(np.float32)
+            rewards = rewards.astype(np.float32)
+            next_states = next_states.astype(np.float32)
+            dones = dones.astype(np.float32)
+
             self._q_1.zero_grad()
             self._q_2.zero_grad()
             self._actor.zero_grad()
@@ -185,35 +205,46 @@ class SoftActorCritic(Algo):
             self._target_value.zero_grad()
 
             state_actions = torch.tensor(
-                np.concatenate((states, np.vstack(actions)), axis=1),
+                np.concatenate((states, np.vstack(actions)), axis=1, dtype=np.float32),
                 requires_grad=False,
+                device=self._device,
             ).float()
 
-            predicted_values = self._value.forward(torch.tensor(states).float())
+            predicted_values = self._value.forward(
+                torch.tensor(states).float().to(self._device)
+            )
             predicted_q_1s = self._q_1.forward(state_actions)
             predicted_q_2s = self._q_2.forward(state_actions)
 
-            norm_params = self._actor.forward(torch.tensor(states).float())
-            new_actions, log_probs = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+            norm_params = self._actor.forward(
+                torch.tensor(states).float().to(self._device)
+            )
+            new_actions, log_probs = get_action(
+                norm_params, LOW=-1.0, HIGH=1.0, device=self._device
+            )
 
-            new_state_actions = torch.cat(
-                (torch.tensor(states), new_actions), 1
-            ).float()
+            new_state_actions = (
+                torch.cat((torch.tensor(states).to(self._device), new_actions), 1)
+                .float()
+                .to(self._device)
+            )
 
             predicted_new_qs = torch.minimum(
                 self._q_1.forward(new_state_actions),
                 self._q_2.forward(new_state_actions),
-            )
+            ).to(self._device)
 
             # Q updates
             target_next_state_values = self._target_value.forward(
-                torch.tensor(next_states).float()
+                torch.tensor(next_states).float().to(self._device)
             ).reshape(1, -1)
             target_qs = (
-                torch.tensor(rewards)
-                + torch.tensor(dones) * self._gamma * target_next_state_values
+                torch.tensor(rewards).to(self._device)
+                + torch.tensor(dones).to(self._device)
+                * self._gamma
+                * target_next_state_values
             )
-            target_qs = target_qs.detach().reshape(-1, 1)
+            target_qs = target_qs.detach().reshape(-1, 1).to(self._device)
 
         with timer("minibatch-backward"):
             q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())
@@ -266,12 +297,16 @@ class SoftActorCritic(Algo):
                 action = None
                 with torch.no_grad():
                     norm_params = self._actor.forward(
-                        torch.tensor(np.array([observation])).float()
+                        torch.tensor(
+                            np.array([observation]), device=self._device
+                        ).float()
                     )
-                    action, _ = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+                    action, _ = get_action(
+                        norm_params, LOW=-1.0, HIGH=1.0, device=self._device
+                    )
 
                     next_observation, reward, done, info = self._env.step(
-                        action[0].numpy()
+                        action[0].cpu().numpy()
                     )
                     current_total_reward += reward
 
