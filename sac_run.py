@@ -1,8 +1,11 @@
 from neural.algos.sac import SoftActorCritic
+from neural.tools.timer import timer, init_timer_manager, PrintManager
 
 import gym
 
 if __name__ == "__main__":
+    init_timer_manager(PrintManager(10 * 1000))
+
     hypers = {
         "future_reward_discount": 0.995,
         "q_lr": 0.0001,
@@ -45,10 +48,10 @@ if __name__ == "__main__":
     sac = SoftActorCritic(hypers, layers, training_params, env)
 
     for i in range(training_params["training_iterations"]):
-        print(f"train-{i}")
-        sac.train()
-        print(f"test-{i}")
-        test_results = sac.test(render=i >= 20)
-        print(f"results={test_results}")
+        with timer(f"training"):
+            sac.train()
+        with timer(f"test"):
+            test_results = sac.test(render=i >= 20)
+        print(f"iteration-{i} results={test_results}")
 
     print("DONE!")
