@@ -3,6 +3,7 @@ from ..model.model import Model
 from ..model.layer import Layer
 from ..model.layer_factory import to_layers, env_to_in_out_sizes
 from ..util.exp_replay import ExpReplay
+from ..tools.timer import timer
 
 from copy import deepcopy
 
@@ -175,74 +176,81 @@ class SoftActorCritic(Algo):
 
     def update_all(self, batch):
 
-        states, actions, rewards, next_states, dones = batch
-        self._q_1.zero_grad()
-        self._q_2.zero_grad()
-        self._actor.zero_grad()
-        self._value.zero_grad()
-        self._target_value.zero_grad()
+        with timer("minibatch-forward"):
+            states, actions, rewards, next_states, dones = batch
+            self._q_1.zero_grad()
+            self._q_2.zero_grad()
+            self._actor.zero_grad()
+            self._value.zero_grad()
+            self._target_value.zero_grad()
 
-        state_actions = torch.tensor(
-            np.concatenate((states, np.vstack(actions)), axis=1), requires_grad=False
-        ).float()
+            state_actions = torch.tensor(
+                np.concatenate((states, np.vstack(actions)), axis=1),
+                requires_grad=False,
+            ).float()
 
-        predicted_values = self._value.forward(torch.tensor(states).float())
-        predicted_q_1s = self._q_1.forward(state_actions)
-        predicted_q_2s = self._q_2.forward(state_actions)
+            predicted_values = self._value.forward(torch.tensor(states).float())
+            predicted_q_1s = self._q_1.forward(state_actions)
+            predicted_q_2s = self._q_2.forward(state_actions)
 
-        norm_params = self._actor.forward(torch.tensor(states).float())
-        new_actions, log_probs = get_action(norm_params, LOW=-1.0, HIGH=1.0)
+            norm_params = self._actor.forward(torch.tensor(states).float())
+            new_actions, log_probs = get_action(norm_params, LOW=-1.0, HIGH=1.0)
 
-        new_state_actions = torch.cat((torch.tensor(states), new_actions), 1).float()
+            new_state_actions = torch.cat(
+                (torch.tensor(states), new_actions), 1
+            ).float()
 
-        predicted_new_qs = torch.minimum(
-            self._q_1.forward(new_state_actions), self._q_2.forward(new_state_actions)
-        )
+            predicted_new_qs = torch.minimum(
+                self._q_1.forward(new_state_actions),
+                self._q_2.forward(new_state_actions),
+            )
 
-        # Q updates
-        target_next_state_values = self._target_value.forward(
-            torch.tensor(next_states).float()
-        ).reshape(1, -1)
-        target_qs = (
-            torch.tensor(rewards)
-            + torch.tensor(dones) * self._gamma * target_next_state_values
-        )
-        target_qs = target_qs.detach().reshape(-1, 1)
+            # Q updates
+            target_next_state_values = self._target_value.forward(
+                torch.tensor(next_states).float()
+            ).reshape(1, -1)
+            target_qs = (
+                torch.tensor(rewards)
+                + torch.tensor(dones) * self._gamma * target_next_state_values
+            )
+            target_qs = target_qs.detach().reshape(-1, 1)
 
-        q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())
-        q_2_loss = self._q_2_loss_fn(predicted_q_2s, target_qs.float())
+        with timer("minibatch-backward"):
+            q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())
+            q_2_loss = self._q_2_loss_fn(predicted_q_2s, target_qs.float())
 
-        q_1_loss.backward()
-        q_2_loss.backward()
+            q_1_loss.backward()
+            q_2_loss.backward()
 
-        # Value update
-        target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
-        v_loss = self._value_loss_fn(predicted_values, target_vs.float())
+            # Value update
+            target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
+            v_loss = self._value_loss_fn(predicted_values, target_vs.float())
 
-        v_loss.backward()
+            v_loss.backward()
 
-        # Policy update
-        loss = self._actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
-        loss.backward()
+            # Policy update
+            loss = self._actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
+            loss.backward()
 
-        with torch.no_grad():
-            for params in self._q_1.parameters():
-                params -= self._q_lr * params.grad
+        with timer("minibatch-update-grads"):
+            with torch.no_grad():
+                for params in self._q_1.parameters():
+                    params -= self._q_lr * params.grad
 
-            for params in self._q_2.parameters():
-                params -= self._q_lr * params.grad
+                for params in self._q_2.parameters():
+                    params -= self._q_lr * params.grad
 
-            for params in self._value.parameters():
-                params -= self._v_lr * params.grad
+                for params in self._value.parameters():
+                    params -= self._v_lr * params.grad
 
-            for params in self._actor.parameters():
-                # Subtract because we wish to minimize divergence.
-                params -= self._actor_lr * params.grad
+                for params in self._actor.parameters():
+                    # Subtract because we wish to minimize divergence.
+                    params -= self._actor_lr * params.grad
 
-            for target, update in zip(
-                self._target_value.parameters(), self._value.parameters()
-            ):
-                target.copy_(self._alpha * update + (1.0 - self._alpha) * target)
+                for target, update in zip(
+                    self._target_value.parameters(), self._value.parameters()
+                ):
+                    target.copy_(self._alpha * update + (1.0 - self._alpha) * target)
 
     def test(self, render=False) -> dict:
         result = {"average": 0, "max": None, "min": None}
