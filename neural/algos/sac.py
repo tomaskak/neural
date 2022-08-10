@@ -34,11 +34,13 @@ def get_action(norm_params, LOW, HIGH, device):
         first = i * 2
         mu = norm_params[:, first]
         log_sigma = norm_params[:, first + 1]
-        std_normal = torch.distributions.normal.Normal(0, 1)
+        std_normal = torch.distributions.normal.Normal(
+            torch.tensor(0).float().to(device), torch.tensor(1).float().to(device)
+        )
         z = std_normal.sample(sample_shape=mu.shape)
         sigma = torch.exp(log_sigma)
 
-        action = torch.clamp((mu + sigma * z.to(device)), min=LOW, max=HIGH)
+        action = torch.clamp((mu + sigma), min=LOW, max=HIGH)
 
         if log_prob is None:
             log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
@@ -149,27 +151,24 @@ class SoftActorCritic(Algo):
         for episode in range(EPISODES):
             observation = self._env.reset()
             for step in range(STEPS):
+                self._actor.to("cpu")
                 total_steps += 1
                 action = None
                 with torch.no_grad():
                     norm_params = self._actor.forward(
-                        torch.tensor(
-                            np.array([observation]), device=self._device
-                        ).float()
+                        torch.tensor(np.array([observation]), device="cpu").float()
                     )
                     # TODO: Use env's definition of max action values
                     action, _ = get_action(
-                        norm_params, LOW=-1.0, HIGH=1.0, device=self._device
+                        norm_params, LOW=-1.0, HIGH=1.0, device="cpu"
                     )
 
-                next_observation, reward, done, info = self._env.step(
-                    action[0].cpu().numpy()
-                )
+                next_observation, reward, done, info = self._env.step(action[0].numpy())
 
                 self._replay_buffer.push(
                     [
                         observation,
-                        action.cpu(),
+                        action,
                         reward,
                         next_observation,
                         0.0 if done else 1.0,
@@ -186,17 +185,21 @@ class SoftActorCritic(Algo):
                     and total_steps % ALL_UPDATE == 0
                 ):
                     batch = self._replay_buffer.sample(self._mini_batch_size)
+                    self._actor.to(self._device)
                     self.update_all(batch)
 
     def update_all(self, batch):
 
         with timer("minibatch-forward"):
             states, actions, rewards, next_states, dones = batch
-            states = states.astype(np.float32)
-            actions = actions.astype(np.float32)
-            rewards = rewards.astype(np.float32)
-            next_states = next_states.astype(np.float32)
-            dones = dones.astype(np.float32)
+
+            states = torch.tensor(states.astype(np.float32), device=self._device)
+            actions = torch.tensor(actions.astype(np.float32), device=self._device)
+            rewards = torch.tensor(rewards.astype(np.float32), device=self._device)
+            next_states = torch.tensor(
+                next_states.astype(np.float32), device=self._device
+            )
+            dones = torch.tensor(dones.astype(np.float32), device=self._device)
 
             self._q_1.zero_grad()
             self._q_2.zero_grad()
@@ -204,47 +207,30 @@ class SoftActorCritic(Algo):
             self._value.zero_grad()
             self._target_value.zero_grad()
 
-            state_actions = torch.tensor(
-                np.concatenate((states, np.vstack(actions)), axis=1, dtype=np.float32),
-                requires_grad=False,
-                device=self._device,
-            ).float()
+            state_actions = torch.cat((states, actions), dim=1)
 
-            predicted_values = self._value.forward(
-                torch.tensor(states).float().to(self._device)
-            )
+            predicted_values = self._value.forward(states)
             predicted_q_1s = self._q_1.forward(state_actions)
             predicted_q_2s = self._q_2.forward(state_actions)
 
-            norm_params = self._actor.forward(
-                torch.tensor(states).float().to(self._device)
-            )
+            norm_params = self._actor.forward(states)
             new_actions, log_probs = get_action(
                 norm_params, LOW=-1.0, HIGH=1.0, device=self._device
             )
 
-            new_state_actions = (
-                torch.cat((torch.tensor(states).to(self._device), new_actions), 1)
-                .float()
-                .to(self._device)
-            )
+            new_state_actions = torch.cat((states, new_actions), 1)
 
             predicted_new_qs = torch.minimum(
                 self._q_1.forward(new_state_actions),
                 self._q_2.forward(new_state_actions),
-            ).to(self._device)
+            )
 
             # Q updates
-            target_next_state_values = self._target_value.forward(
-                torch.tensor(next_states).float().to(self._device)
-            ).reshape(1, -1)
-            target_qs = (
-                torch.tensor(rewards).to(self._device)
-                + torch.tensor(dones).to(self._device)
-                * self._gamma
-                * target_next_state_values
+            target_next_state_values = self._target_value.forward(next_states).reshape(
+                1, -1
             )
-            target_qs = target_qs.detach().reshape(-1, 1).to(self._device)
+            target_qs = rewards + dones * self._gamma * target_next_state_values
+            target_qs = target_qs.detach().reshape(-1, 1)
 
         with timer("minibatch-backward"):
             q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())
@@ -290,6 +276,7 @@ class SoftActorCritic(Algo):
         EPISODES = self._training_params.get("episodes_per_test", 10)
 
         total_reward = 0
+        self._actor.to("cpu")
         for i in range(EPISODES):
             observation = self._env.reset()
             current_total_reward = 0
@@ -297,16 +284,14 @@ class SoftActorCritic(Algo):
                 action = None
                 with torch.no_grad():
                     norm_params = self._actor.forward(
-                        torch.tensor(
-                            np.array([observation]), device=self._device
-                        ).float()
+                        torch.tensor(np.array([observation]), device="cpu").float()
                     )
                     action, _ = get_action(
-                        norm_params, LOW=-1.0, HIGH=1.0, device=self._device
+                        norm_params, LOW=-1.0, HIGH=1.0, device="cpu"
                     )
 
                     next_observation, reward, done, info = self._env.step(
-                        action[0].cpu().numpy()
+                        action[0].numpy()
                     )
                     current_total_reward += reward
 

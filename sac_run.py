@@ -13,7 +13,7 @@ if __name__ == "__main__":
         "actor_lr": 0.001,
         "target_update_step": 0.001,
         "experience_replay_size": 1000 * 1000,
-        "minibatch_size": 32,
+        "minibatch_size": 128,
     }
     layers = {
         "actor": [
@@ -37,12 +37,12 @@ if __name__ == "__main__":
         ],
     }
     training_params = {
-        "episodes_per_training": 20,
+        "episodes_per_training": 5,
         "max_steps": 200,
         "steps_between_updates": 1,
-        "episodes_per_test": 10,
+        "episodes_per_test": 2,
         "training_iterations": 400,
-        "device": "mps",
+        "device": "cpu",
     }
 
     env = gym.make("MountainCarContinuous-v0")
