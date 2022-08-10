@@ -1,5 +1,5 @@
 from ..algos.algo import Algo
-from ..model.model import Model
+from ..model.model import Model, NormalModel
 from ..model.layer import Layer
 from ..model.layer_factory import to_layers, env_to_in_out_sizes
 from ..util.exp_replay import ExpReplay
@@ -9,47 +9,6 @@ from copy import deepcopy
 
 import torch
 import numpy as np
-
-
-def get_action(norm_params, LOW, HIGH, device):
-    """
-    Get the action values from the norm_params passed in.
-
-    norm_params can represent multiple sets of actions, but each set must
-    be even as each pair of elements in the set are assumed to be a mu and
-    sigma in a normal distribution.
-
-    Each mu and sigma will be used to sample a normal distribution to get an
-    action value. Additionally the log probability of the actions selected will
-    be returned.
-
-    Returns: [ [action0, action1, ..., actionN], ... ] ,
-             [ log(P(action0)) + log(P(action1)) ... + log(P(actionN)), ... ]
-    """
-
-    actions = []
-    log_prob = None
-    # Iterate over each pair of mu and sigma.
-    for i in range(norm_params.shape[1] // 2):
-        first = i * 2
-        mu = norm_params[:, first]
-        log_sigma = norm_params[:, first + 1]
-        std_normal = torch.distributions.normal.Normal(
-            torch.tensor(0).float().to(device), torch.tensor(1).float().to(device)
-        )
-        z = std_normal.sample(sample_shape=mu.shape)
-        sigma = torch.exp(log_sigma)
-
-        action = torch.clamp((mu + sigma), min=LOW, max=HIGH)
-
-        if log_prob is None:
-            log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
-        else:
-            log_prob += torch.distributions.normal.Normal(mu, sigma).log_prob(action)
-
-        actions.append(action.reshape(-1, 1))
-
-    return torch.cat(actions, dim=-1), log_prob
 
 
 class SoftActorCritic(Algo):
@@ -92,7 +51,7 @@ class SoftActorCritic(Algo):
 
         in_size, out_size = env_to_in_out_sizes(env)
 
-        self._actor = Model(
+        self._actor = NormalModel(
             "actor", to_layers(in_size, out_size, layers["actor"]), None  # graph_sink
         )
 
@@ -155,20 +114,20 @@ class SoftActorCritic(Algo):
                 total_steps += 1
                 action = None
                 with torch.no_grad():
-                    norm_params = self._actor.forward(
+                    actions, log_probs = self._actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
-                    # TODO: Use env's definition of max action values
-                    action, _ = get_action(
-                        norm_params, LOW=-1.0, HIGH=1.0, device="cpu"
-                    )
+                    # # TODO: Use env's definition of max action values
+                    actions = torch.clamp(actions, -1.0, 1.0)
 
-                next_observation, reward, done, info = self._env.step(action[0].numpy())
+                next_observation, reward, done, info = self._env.step(
+                    actions[0].numpy()
+                )
 
                 self._replay_buffer.push(
                     [
                         observation,
-                        action,
+                        actions,
                         reward,
                         next_observation,
                         0.0 if done else 1.0,
@@ -213,10 +172,8 @@ class SoftActorCritic(Algo):
             predicted_q_1s = self._q_1.forward(state_actions)
             predicted_q_2s = self._q_2.forward(state_actions)
 
-            norm_params = self._actor.forward(states)
-            new_actions, log_probs = get_action(
-                norm_params, LOW=-1.0, HIGH=1.0, device=self._device
-            )
+            new_actions, log_probs = self._actor.forward(states)
+            new_actions = torch.clamp(new_actions, -1.0, 1.0)
 
             new_state_actions = torch.cat((states, new_actions), 1)
 
@@ -283,15 +240,13 @@ class SoftActorCritic(Algo):
             for step in range(STEPS):
                 action = None
                 with torch.no_grad():
-                    norm_params = self._actor.forward(
+                    actions, log_probs = self._actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
-                    action, _ = get_action(
-                        norm_params, LOW=-1.0, HIGH=1.0, device="cpu"
-                    )
+                    actions = torch.clamp(actions, -1.0, 1.0)
 
                     next_observation, reward, done, info = self._env.step(
-                        action[0].numpy()
+                        actions[0].numpy()
                     )
                     current_total_reward += reward
 

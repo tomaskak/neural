@@ -13,7 +13,7 @@ if __name__ == "__main__":
         "actor_lr": 0.001,
         "target_update_step": 0.001,
         "experience_replay_size": 1000 * 1000,
-        "minibatch_size": 128,
+        "minibatch_size": 64,
     }
     layers = {
         "actor": [
@@ -37,22 +37,22 @@ if __name__ == "__main__":
         ],
     }
     training_params = {
-        "episodes_per_training": 5,
-        "max_steps": 200,
+        "episodes_per_training": 20,
+        "max_steps": 2000,
         "steps_between_updates": 1,
-        "episodes_per_test": 2,
+        "episodes_per_test": 5,
         "training_iterations": 400,
         "device": "cpu",
     }
 
-    env = gym.make("MountainCarContinuous-v0")
+    env = gym.make("InvertedPendulum-v4")
     sac = SoftActorCritic(hypers, layers, training_params, env)
 
     for i in range(training_params["training_iterations"]):
         with timer(f"training"):
             sac.train()
         with timer(f"test"):
-            test_results = sac.test(render=False)
+            test_results = sac.test(render=True)
         print(f"iteration-{i} results={test_results}")
 
     print("DONE!")
