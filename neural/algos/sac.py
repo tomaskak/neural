@@ -80,11 +80,7 @@ class SoftActorCritic(Algo):
         self._replay_size = hypers.get("experience_replay_size", 1000 * 1000)
         self._mini_batch_size = hypers.get("minibatch_size", 64)
 
-        state_spec = ("f8", (in_size,))
-        action_spec = ("f8", (out_size,))
-        self._replay_buffer = ExpReplay(
-            self._replay_size, [state_spec, action_spec, float, state_spec, float]
-        )
+        self._init_replay_buffer()
 
         self._q_1_loss_fn = torch.nn.MSELoss()
         self._q_2_loss_fn = torch.nn.MSELoss()
@@ -96,6 +92,50 @@ class SoftActorCritic(Algo):
         self._q_2.to(self._device)
         self._value.to(self._device)
         self._target_value.to(self._device)
+
+    def _init_replay_buffer(self):
+        in_size, out_size = env_to_in_out_sizes(self._env)
+        state_spec = ("f8", (in_size,))
+        action_spec = ("f8", (out_size,))
+        self._replay_buffer = ExpReplay(
+            self._replay_size, [state_spec, action_spec, float, state_spec, float]
+        )
+
+    def load(self, settings):
+        self._actor.load_state_dict(settings["actor"])
+        self._q_1.load_state_dict(settings["q_1"])
+        self._q_2.load_state_dict(settings["q_2"])
+        self._value.load_state_dict(settings["value"])
+        self._target_value.load_state_dict(settings["target_value"])
+
+        hypers = settings["hyperparameters"]
+        self._gamma = hypers["future_reward_discount"]
+        self._q_lr = hypers["q_lr"]
+        self._v_lr = hypers["v_lr"]
+        self._actor_lr = hypers["actor_lr"]
+        self._alpha = hypers["target_update_step"]
+        self._replay_size = hypers["experience_replay_size"]
+        self._mini_batch_size = hypers["minibatch_size"]
+
+        self._init_replay_buffer()
+
+    def save(self):
+        return {
+            "actor": self._actor.state_dict(),
+            "q_1": self._q_1.state_dict(),
+            "q_2": self._q_2.state_dict(),
+            "value": self._value.state_dict(),
+            "target_value": self._target_value.state_dict(),
+            "hyperparameters": {
+                "future_reward_discount": self._gamma,
+                "q_lr": self._q_lr,
+                "v_lr": self._v_lr,
+                "actor_lr": self._actor_lr,
+                "target_update_step": self._alpha,
+                "experience_replay_size": self._replay_size,
+                "minibatch_size": self._mini_batch_size,
+            },
+        }
 
     @classmethod
     def defined_hyperparams(cls) -> dict:
