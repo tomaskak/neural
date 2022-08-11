@@ -80,6 +80,11 @@ class SoftActorCritic(Algo):
         self._replay_size = hypers.get("experience_replay_size", 1000 * 1000)
         self._mini_batch_size = hypers.get("minibatch_size", 64)
 
+        self._actor_optim = torch.optim.Adam(self._actor.parameters(), self._actor_lr)
+        self._q_1_optim = torch.optim.Adam(self._q_1.parameters(), self._q_lr)
+        self._q_2_optim = torch.optim.Adam(self._q_2.parameters(), self._q_lr)
+        self._value_optim = torch.optim.Adam(self._value.parameters(), self._v_lr)
+
         self._init_replay_buffer()
 
         self._q_1_loss_fn = torch.nn.MSELoss()
@@ -108,6 +113,11 @@ class SoftActorCritic(Algo):
         self._value.load_state_dict(settings["value"])
         self._target_value.load_state_dict(settings["target_value"])
 
+        self._actor_optim.load_state_dict(settings["actor_optim"])
+        self._q_1_optim.load_state_dict(settings["q_1_optim"])
+        self._q_2_optim.load_state_dict(settings["q_2_optim"])
+        self._value_optim.load_state_dict(settings["value_optim"])
+
         hypers = settings["hyperparameters"]
         self._gamma = hypers["future_reward_discount"]
         self._q_lr = hypers["q_lr"]
@@ -125,6 +135,10 @@ class SoftActorCritic(Algo):
             "q_1": self._q_1.state_dict(),
             "q_2": self._q_2.state_dict(),
             "value": self._value.state_dict(),
+            "actor_optim": self._actor_optim.state_dict(),
+            "q_1_optim": self._q_1_optim.state_dict(),
+            "q_2_optim": self._q_2_optim.state_dict(),
+            "value_optim": self._value_optim.state_dict(),
             "target_value": self._target_value.state_dict(),
             "hyperparameters": {
                 "future_reward_discount": self._gamma,
@@ -249,20 +263,11 @@ class SoftActorCritic(Algo):
             loss.backward()
 
         with timer("minibatch-update-grads"):
+            self._actor_optim.step()
+            self._q_1_optim.step()
+            self._q_2_optim.step()
+            self._value_optim.step()
             with torch.no_grad():
-                for params in self._q_1.parameters():
-                    params -= self._q_lr * params.grad
-
-                for params in self._q_2.parameters():
-                    params -= self._q_lr * params.grad
-
-                for params in self._value.parameters():
-                    params -= self._v_lr * params.grad
-
-                for params in self._actor.parameters():
-                    # Subtract because we wish to minimize divergence.
-                    params -= self._actor_lr * params.grad
-
                 for target, update in zip(
                     self._target_value.parameters(), self._value.parameters()
                 ):
