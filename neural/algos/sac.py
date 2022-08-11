@@ -117,7 +117,7 @@ class SoftActorCritic(Algo):
                     actions, log_probs = self._actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
-                    # # TODO: Use env's definition of max action values
+                    # TODO: Use env's definition of max action values
                     actions = torch.clamp(actions, -1.0, 1.0)
 
                 next_observation, reward, done, info = self._env.step(
@@ -140,7 +140,7 @@ class SoftActorCritic(Algo):
                     break
 
                 if (
-                    len(self._replay_buffer) > self._mini_batch_size * 5
+                    len(self._replay_buffer) > self._mini_batch_size * 2
                     and total_steps % ALL_UPDATE == 0
                 ):
                     batch = self._replay_buffer.sample(self._mini_batch_size)
@@ -154,11 +154,15 @@ class SoftActorCritic(Algo):
 
             states = torch.tensor(states.astype(np.float32), device=self._device)
             actions = torch.tensor(actions.astype(np.float32), device=self._device)
-            rewards = torch.tensor(rewards.astype(np.float32), device=self._device)
+            rewards = torch.tensor(
+                rewards.astype(np.float32), device=self._device
+            ).reshape(-1, 1)
             next_states = torch.tensor(
                 next_states.astype(np.float32), device=self._device
             )
-            dones = torch.tensor(dones.astype(np.float32), device=self._device)
+            dones = torch.tensor(dones.astype(np.float32), device=self._device).reshape(
+                -1, 1
+            )
 
             self._q_1.zero_grad()
             self._q_2.zero_grad()
@@ -183,9 +187,7 @@ class SoftActorCritic(Algo):
             )
 
             # Q updates
-            target_next_state_values = self._target_value.forward(next_states).reshape(
-                1, -1
-            )
+            target_next_state_values = self._target_value.forward(next_states)
             target_qs = rewards + dones * self._gamma * target_next_state_values
             target_qs = target_qs.detach().reshape(-1, 1)
 
