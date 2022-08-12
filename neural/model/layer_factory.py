@@ -176,4 +176,4 @@ def env_to_in_out_sizes(env) -> (int, int):
     elif isinstance(env.action_space, Box):
         return input_size, flatten_dims(env.action_space.shape)
     else:
-        raise TypeError(f"env is not a known type, type={type(env)}")
+        return input_size, flatten_dims(env.action_space.shape)
