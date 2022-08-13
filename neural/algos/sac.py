@@ -171,8 +171,6 @@ class SoftActorCritic(Algo):
                     actions, log_probs = self._actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
-                    # TODO: Use env's definition of max action values
-                    actions = torch.clamp(actions, -1.0, 1.0)
 
                 next_observation, reward, done, info = self._env.step(
                     actions[0].numpy()
@@ -231,7 +229,6 @@ class SoftActorCritic(Algo):
             predicted_q_2s = self._q_2.forward(state_actions)
 
             new_actions, log_probs = self._actor.forward(states)
-            new_actions = torch.clamp(new_actions, -1.0, 1.0)
 
             new_state_actions = torch.cat((states, new_actions), 1)
 
@@ -290,7 +287,6 @@ class SoftActorCritic(Algo):
                     actions, log_probs = self._actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
-                    actions = torch.clamp(actions, -1.0, 1.0)
 
                     next_observation, reward, done, info = self._env.step(
                         actions[0].numpy()
