@@ -45,13 +45,14 @@ class Work:
 class Init:
     """
     Represents the initialization information of a set of work.
-    The size indicates the total buffer space required and the init_fn will be
+    The size indicates the total buffger space required and the init_fn will be
     called on that space.
     """
 
-    def __init__(self, num_workers: int, space_needed: int, init_defs: list):
+    def __init__(self, num_workers: int, space_needed: int, init_defs: list, args=None):
         self._space = space_needed
         self._init_defs = init_defs
+        self._init_args = args
         self._num_workers = num_workers
 
     @property
@@ -65,6 +66,10 @@ class Init:
     @property
     def defs(self):
         return self._init_defs
+
+    @property
+    def args(self):
+        return self._init_args
 
 
 class WorkerSpace:
@@ -86,7 +91,7 @@ def check_row_is_clear(matrix, row):
     return True
 
 
-def init_pool_wrap(shmem_name, shmem_space, init_defs):
+def init_pool_wrap(shmem_name, shmem_space, init_defs, init_args=None):
     print(f"initializing space...")
 
     data = {}
@@ -113,6 +118,11 @@ def init_pool_wrap(shmem_name, shmem_space, init_defs):
         )
         print(f"initialized {key} data={data[key]}")
         curr_offset += np.dtype(dtype).itemsize * size
+
+    if init_args is not None:
+        for key, value in init_args:
+            print(f"adding {key} with value {value} to data")
+            data[key] = value
 
     WorkerSpace.data = data
     print(f"WorkerSpace.data={WorkerSpace.data}")
@@ -149,10 +159,12 @@ class ProcessOrchestrator:
         self._pool = Pool(
             init.num_workers,
             initializer=init_pool_wrap,
-            initargs=(self._shmem_name, init.space_needed, init.defs),
+            initargs=(self._shmem_name, init.space_needed, init.defs, init.args),
         )
 
-        init_pool_wrap(self._shmem_name, self._init.space_needed, self._init.defs)
+        init_pool_wrap(
+            self._shmem_name, self._init.space_needed, self._init.defs, init.args
+        )
         self._data = WorkerSpace.data
 
     def execute(self, X):

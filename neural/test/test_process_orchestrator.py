@@ -19,6 +19,8 @@ def write_item_fn(idx, start, length, key):
     end = start + length
     msg = data["input"][start:end]
     data["msg"][start:end] = msg
+    if "first_letter" in data:
+        data["msg"][start] = data["first_letter"]
     data["time"][idx] = time.time_ns() % 1000000000000
     return key
 
@@ -32,7 +34,7 @@ def init_msgtime(msg_length, num_times):
     return defs
 
 
-def make_write_work_items(X, edges):
+def make_write_work_items(X, edges, init_args=None):
     work_defs = []
     for i, edge in enumerate(edges):
         provides, depends_on = edge
@@ -48,6 +50,7 @@ def make_write_work_items(X, edges):
         num_workers=2,
         space_needed=len(X) + len(work_defs) * np.dtype(np.float32).itemsize,
         init_defs=init_msgtime(len(X), len(work_defs)),
+        args=init_args,
     )
     return work_defs, init
 
@@ -177,3 +180,17 @@ class TestProcessOrchestrator:
         assert output["time"][0] < output["time"][2]
         assert output["time"][1] < output["time"][2]
         assert output["time"][0] < output["time"][3]
+
+    def test_init_args(self):
+        X = "hownowcow"
+        work_defs, init = make_write_work_items(
+            X, [("A", None), ("B", "A"), ("C", "B")], init_args=[("first_letter", "x")]
+        )
+        orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
+
+        success, output = orchestrator.execute(X)
+
+        assert success
+        assert (
+            "".join([c.decode("utf-8") for c in output["msg"]]) == "xowxowxow"
+        ), f"{output['msg']}"

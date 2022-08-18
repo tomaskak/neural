@@ -204,6 +204,7 @@ class SoftActorCritic(Algo):
         with timer("minibatch-forward"):
             states, actions, rewards, next_states, dones = batch
 
+            # Move batch items to device, cast to float32
             states = torch.tensor(states.astype(np.float32), device=self._device)
             actions = torch.tensor(actions.astype(np.float32), device=self._device)
             rewards = torch.tensor(
@@ -223,6 +224,8 @@ class SoftActorCritic(Algo):
             self._target_value.zero_grad()
 
             state_actions = torch.cat((states, actions), dim=1)
+
+            # Everything before this line should be done at replay buffer loading time or minibatch creation.
 
             predicted_values = self._value.forward(states)
             predicted_q_1s = self._q_1.forward(state_actions)
