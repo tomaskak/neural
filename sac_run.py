@@ -31,7 +31,7 @@ if __name__ == "__main__":
         "actor_lr": 0.001,
         "target_update_step": 0.001,
         "experience_replay_size": 1000 * 1000,
-        "minibatch_size": 256,
+        "minibatch_size": 64,
     }
     layers = {
         "actor": [
@@ -39,23 +39,23 @@ if __name__ == "__main__":
             ("l2", "tanh", "input*2", "output*2"),
         ],
         "q_1": [
-            ("l1", "tanh", "input + output", "input*12+output*12"),
-            ("l2", "tanh", "input*12+output*12", "input*12+output*12"),
-            ("l3", "linear", "input*12+output*12", 1),
+            ("l1", "tanh", "input + output", "input*3+output*3"),
+            ("l2", "tanh", "input*3+output*3", "input*3+output*3"),
+            ("l3", "linear", "input*3+output*3", 1),
         ],
         "q_2": [
-            ("l1", "tanh", "input + output", "input*12+output*12"),
-            ("l2", "tanh", "input*12+output*12", "input*12+output*12"),
-            ("l3", "linear", "input*12+output*12", 1),
+            ("l1", "tanh", "input + output", "input*3+output*3"),
+            ("l2", "tanh", "input*3+output*3", "input*3+output*3"),
+            ("l3", "linear", "input*3+output*3", 1),
         ],
         "value": [
-            ("l1", "tanh", "input", "input*12+output*12"),
-            ("l2", "tanh", "input*12+output*12", "input*12+output*12"),
-            ("l3", "linear", "input*12+output*12", 1),
+            ("l1", "tanh", "input", "input*3+output*3"),
+            ("l2", "tanh", "input*3+output*3", "input*3+output*3"),
+            ("l3", "linear", "input*3+output*3", 1),
         ],
     }
     training_params = {
-        "episodes_per_training": 100,
+        "episodes_per_training": 20,
         "max_steps": 10000,
         "steps_between_updates": 1,
         "episodes_per_test": 5,

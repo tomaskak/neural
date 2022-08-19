@@ -1,6 +1,6 @@
 from copy import deepcopy
 from ..util.process_orchestrator import Init, WorkerSpace
-from torch.multiprocessing import Event
+from multiprocessing import Event
 import time
 
 import numpy as np
@@ -72,7 +72,7 @@ class SACWorker:
     ):
         """
         model arguments must be picklable as they will be sent to new processes
- 
+
         all model params are expected to be dicts with model and optimizer under the "model" and "optim" keys
         if applicable.
         """

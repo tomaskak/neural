@@ -1,0 +1,11 @@
+numpy
+mujoco
+gym
+gym[classic_control]
+gym[mujoco]
+pytest
+plotly
+pandas
+dash
+pyglet
+torch

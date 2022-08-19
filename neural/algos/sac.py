@@ -74,6 +74,7 @@ class SoftActorCritic(Algo):
 
         self._target_value = Model("target_value", [], None)
         self._target_value._layers = deepcopy(self._value.layers())
+        self._target_value.requires_grad_(False)
 
         self._gamma = hypers.get("future_reward_discount", 0.99)
         self._q_lr = hypers.get("q_lr", 0.001)
@@ -106,6 +107,9 @@ class SoftActorCritic(Algo):
         self._q_2.to(self._device)
         self._value.to(self._device)
         self._target_value.to(self._device)
+
+        self._total_elapsed_time = 0.0
+        self._total_update_all_times = 0.0
 
         if self._multi_process:
             worker = SACWorker(in_size, out_size, self._mini_batch_size)
@@ -239,26 +243,32 @@ class SoftActorCritic(Algo):
                     self.update_all(batch)
 
     def update_all(self, batch):
-
         with timer("minibatch-setup"):
             states, actions, rewards, next_states, dones = batch
 
             device = self._device
+
+            # multiprocessing only works on cpu
             if self._multi_process:
                 device = "cpu"
 
-            # Move batch items to device, cast to float32
-            states = torch.tensor(states.astype(np.float32), device=device)
-            actions = torch.tensor(actions.astype(np.float32), device=device)
-            rewards = torch.tensor(
-                rewards.astype(np.float32), device=device
-            ).reshape(-1, 1)
+            states = torch.tensor(
+                states.astype(np.float32), device=device, requires_grad=False
+            )
+            actions = torch.tensor(
+                actions.astype(np.float32), device=device, requires_grad=False
+            )
+            state_actions = torch.cat((states, actions), dim=1)
             next_states = torch.tensor(
-                next_states.astype(np.float32), device=device
+                next_states.astype(np.float32), device=device, requires_grad=False
             )
-            dones = torch.tensor(dones.astype(np.float32), device=device).reshape(
-                -1, 1
-            )
+            rewards = torch.tensor(
+                rewards.astype(np.float32), device=device, requires_grad=False
+            ).reshape(-1, 1)
+
+            dones = torch.tensor(
+                dones.astype(np.float32), device=device, requires_grad=False
+            ).reshape(-1, 1)
 
             if self._multi_process:
                 data = WorkerSpace.data
@@ -279,17 +289,13 @@ class SoftActorCritic(Algo):
             self._q_2.zero_grad()
             self._actor.zero_grad()
             self._value.zero_grad()
-            self._target_value.zero_grad()
-
-            state_actions = torch.cat((states, actions), dim=1)
 
             # Everything before this line should be done at replay buffer loading time or minibatch creation.
-
             predicted_values = self._value.forward(states)
+            new_actions, log_probs = self._actor.forward(states)
             predicted_q_1s = self._q_1.forward(state_actions)
             predicted_q_2s = self._q_2.forward(state_actions)
-
-            new_actions, log_probs = self._actor.forward(states)
+            target_next_state_values = self._target_value.forward(next_states)
 
             new_state_actions = torch.cat((states, new_actions), 1)
 
@@ -299,9 +305,8 @@ class SoftActorCritic(Algo):
             )
 
             # Q updates
-            target_next_state_values = self._target_value.forward(next_states)
             target_qs = rewards + dones * self._gamma * target_next_state_values
-            target_qs = target_qs.detach().reshape(-1, 1)
+            target_qs = target_qs.reshape(-1, 1)
 
         with timer("minibatch-backward"):
             q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())

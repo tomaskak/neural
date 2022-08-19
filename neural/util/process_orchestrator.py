@@ -1,7 +1,7 @@
 from collections.abc import Callable
-from torch.multiprocessing.shared_memory import SharedMemory
-from torch.multiprocessing.pool import Pool
-from torch.multiprocessing import Process, Event
+from multiprocessing.shared_memory import SharedMemory
+from multiprocessing.pool import Pool
+from multiprocessing import Process, Event
 from time import time
 from copy import deepcopy
 from threading import Lock
@@ -146,8 +146,8 @@ class ProcessOrchestrator:
     """
 
     def __init__(self, init: Init, work_defs: list, out_fn: Callable | None = None):
-        torch.multiprocessing.set_start_method('spawn', force=True)
-        
+        torch.multiprocessing.set_start_method("spawn", force=True)
+
         _validate_work(work_defs)
 
         assert init.space_needed > 0
