@@ -1,6 +1,7 @@
 from copy import deepcopy
-from neural.util.process_orchestrator import Init, WorkerSpace
+from ..util.process_orchestrator import Init, WorkerSpace
 from multiprocessing import Event
+import time
 
 import numpy as np
 import torch
@@ -100,6 +101,7 @@ class SACWorker:
 
     @staticmethod
     def actor(device, provides):
+        # print(f"{provides} starting at {time.time()}")
         try:
             data = WorkerSpace.data
             actor = data["model:actor"]
@@ -122,29 +124,13 @@ class SACWorker:
             data["new_qs"][:] = new_qs.detach()[:]
 
             data["new_qs_done"].set()
+            # print(f"new_qs_done set at {time.time()}")
 
             loss = (log_probs - new_qs).mean()
             loss.backward()
 
             data["optim:actor"].step()
 
-            data["q_1_done"].wait(timeout=5.0)
-            data["q_2_done"].wait(timeout=5.0)
-            data["value_and_target_done"].wait(timeout=5.0)
-
-            if (
-                not data["q_1_done"].is_set()
-                or not data["q_2_done"].is_set()
-                or not data["value_and_target_done"].is_set()
-            ):
-                raise Exception(
-                    f"timeout in actor waiting for other processes to finish"
-                )
-
-            data["q_1_done"].clear()
-            data["q_2_done"].clear()
-            data["value_and_target_done"].clear()
-            data["new_qs_done"].clear()
         except Exception as e:
             raise Exception(f"exception in {provides}: [{e}]")
             raise e
@@ -153,6 +139,7 @@ class SACWorker:
 
     @staticmethod
     def value(TAU, device, provides):
+        # print(f"{provides} starting at {time.time()}")
         try:
             data = WorkerSpace.data
             value = data["model:value"]
@@ -162,6 +149,7 @@ class SACWorker:
             forward = value.forward(states)
 
             data["new_qs_done"].wait(timeout=5.0)
+            # print(f"{provides} woke up at {time.time()}")
             if not data["new_qs_done"].is_set():
                 raise Exception(f"timeout on new qs [{provides}]")
 
@@ -183,7 +171,6 @@ class SACWorker:
                 ):
                     target.copy_(TAU * update + (1.0 - TAU) * target)
 
-            data["value_and_target_done"].set()
         except Exception as e:
             raise Exception(f"exception in {provides}: [{e}]")
 
@@ -191,11 +178,14 @@ class SACWorker:
 
     @staticmethod
     def q(one_or_two, GAMMA, device, provides):
+        # print(f"{provides} starting at {time.time()}")
         try:
             data = WorkerSpace.data
             q_model = data["model:q_1" if one_or_two == "1" else "model:q_2"]
             target = data["model:target"]
 
+            target.requires_grad = False
+            q_model.requires_grad = True
             q_model.zero_grad()
             q_forward = q_model.forward(
                 torch.from_numpy(data["mb:state_actions"]).to(device)
@@ -209,7 +199,10 @@ class SACWorker:
 
             target_qs = rewards + dones * GAMMA * target_next_state_values
 
+            start = time.time()
             data["new_qs_done"].wait(timeout=5.0)
+            # print(f"itme waiting in {provides}: {time.time() - start}")
+            # print(f"{provides} woke up at {time.time()}")
             if not data["new_qs_done"].is_set():
                 raise Exception(f"timeout on new qs [{provides}]")
 
@@ -220,7 +213,6 @@ class SACWorker:
             loss.backward()
 
             data["optim:q_1" if one_or_two == "1" else "optim:q_2"].step()
-            data["q_1_done" if one_or_two == "1" else "q_2_done"].set()
 
         except Exception as e:
             raise Exception(f"exception in {provides}: [{e}]")

@@ -17,9 +17,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--render", "-r", dest="render", action="store_true", default=False
     )
+    parser.add_argument(
+        "--multiprocess", "-m", dest="multiprocess", action="store_true", default=False
+    )
     args = parser.parse_args()
 
-    init_timer_manager(PrintManager(100 * 1000))
+    init_timer_manager(PrintManager(5 * 1000))
 
     hypers = {
         "future_reward_discount": 0.995,
@@ -28,7 +31,7 @@ if __name__ == "__main__":
         "actor_lr": 0.001,
         "target_update_step": 0.001,
         "experience_replay_size": 1000 * 1000,
-        "minibatch_size": 64,
+        "minibatch_size": 256,
     }
     layers = {
         "actor": [
@@ -36,19 +39,19 @@ if __name__ == "__main__":
             ("l2", "tanh", "input*2", "output*2"),
         ],
         "q_1": [
-            ("l1", "tanh", "input + output", "input*3+output*3"),
-            ("l2", "tanh", "input*3+output*3", "input*3+output*3"),
-            ("l3", "linear", "input*3+output*3", 1),
+            ("l1", "tanh", "input + output", "input*12+output*12"),
+            ("l2", "tanh", "input*12+output*12", "input*12+output*12"),
+            ("l3", "linear", "input*12+output*12", 1),
         ],
         "q_2": [
-            ("l1", "tanh", "input + output", "input*3+output*3"),
-            ("l2", "tanh", "input*3+output*3", "input*3+output*3"),
-            ("l3", "linear", "input*3+output*3", 1),
+            ("l1", "tanh", "input + output", "input*12+output*12"),
+            ("l2", "tanh", "input*12+output*12", "input*12+output*12"),
+            ("l3", "linear", "input*12+output*12", 1),
         ],
         "value": [
-            ("l1", "tanh", "input", "input*3+output*3"),
-            ("l2", "tanh", "input*3+output*3", "input*3+output*3"),
-            ("l3", "linear", "input*3+output*3", 1),
+            ("l1", "tanh", "input", "input*12+output*12"),
+            ("l2", "tanh", "input*12+output*12", "input*12+output*12"),
+            ("l3", "linear", "input*12+output*12", 1),
         ],
     }
     training_params = {
@@ -59,6 +62,7 @@ if __name__ == "__main__":
         "training_iterations": 100 if args.iterations is None else args.iterations,
         "device": "cpu",
         "save_on_iteration": 20,
+        "multiprocess": args.multiprocess,
     }
 
     env_key = "Ant-v4"

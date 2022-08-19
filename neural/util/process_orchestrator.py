@@ -6,6 +6,7 @@ from time import time
 from copy import deepcopy
 from threading import Lock
 
+import torch
 import numpy as np
 
 
@@ -92,7 +93,7 @@ def check_row_is_clear(matrix, row):
 
 
 def init_pool_wrap(shmem_name, shmem_space, init_defs, init_args=None):
-    # print(f"initializing space...")
+    print(f"initializing space...")
 
     data = {}
     WorkerSpace.block = SharedMemory(name=shmem_name, create=False, size=shmem_space)
@@ -124,7 +125,7 @@ def init_pool_wrap(shmem_name, shmem_space, init_defs, init_args=None):
 
     if init_args is not None:
         for key, value in init_args:
-            print(f"adding {key} with value {value} to data")
+            # print(f"adding {key} with value {value} to data")
             data[key] = value
 
     WorkerSpace.data = data
@@ -170,15 +171,22 @@ class ProcessOrchestrator:
         )
         self._data = WorkerSpace.data
 
+        self._done_event, self._error_event = (Event(), Event())
+        self._lock = Lock()
+
     def execute(self):
+        # print(f"executing")
         adjacency_matrix = deepcopy(self._adjacency_matrix)
         matrix_keys = self._matrix_keys
-        done_event, error_event = (Event(), Event())
+        done_event, error_event = (self._done_event, self._error_event)
         pool = self._pool
         work_items = self._work_items
         completed = 0
         total = len(self._work_items)
-        lock = Lock()
+        lock = self._lock
+
+        done_event.clear()
+        error_event.clear()
 
         # print(f"adjacency_matrix = {adjacency_matrix}")
 
@@ -205,17 +213,17 @@ class ProcessOrchestrator:
                             callback=callback,
                             error_callback=error_callback,
                         )
-            lock.acquire()
+            # lock.acquire()
             completed += 1
             if completed == total:
                 # print(f"setting done event...")
                 done_event.set()
-            lock.release()
+            # lock.release()
 
         # print(f"Kicking off work..")
         for i in range(len(adjacency_matrix)):
             if check_row_is_clear(adjacency_matrix, i):
-                # print(f"initial kick off for {i}")
+                # print(f"initial kick off for {i} at {time()}")
                 pool.apply_async(
                     work_items[i].fn,
                     work_items[i].args,
@@ -227,6 +235,9 @@ class ProcessOrchestrator:
         done_event.wait(timeout=20.0)
         if error_event.is_set():
             return False, None
+
+        if "new_qs_done" in self._data:
+            self._data["new_qs_done"].clear()
 
         if not done_event.is_set():
             print(

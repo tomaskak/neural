@@ -4,6 +4,8 @@ from ..model.layer import Layer
 from ..model.layer_factory import to_layers, env_to_in_out_sizes
 from ..util.exp_replay import ExpReplay
 from ..tools.timer import timer
+from ..algos.sac_worker import SACWorker
+from ..util.process_orchestrator import ProcessOrchestrator, Work, WorkerSpace
 
 from copy import deepcopy
 
@@ -42,6 +44,7 @@ class SoftActorCritic(Algo):
         """
         super().__init__(hypers, training_params, env)
         self._device = training_params.get("device", "cpu")
+        self._multi_process = training_params.get("multiprocess", False)
 
         for model in SoftActorCritic.required_model_defs:
             assert model in layers, f"definition for {model} not provided in {layers}"
@@ -92,11 +95,47 @@ class SoftActorCritic(Algo):
         self._value_loss_fn = torch.nn.MSELoss()
         self._actor_loss_fn = lambda x, y: (x - y).mean()
 
+        self._actor.share_memory()
+        self._q_1.share_memory()
+        self._q_2.share_memory()
+        self._value.share_memory()
+        self._target_value.share_memory()
+
         self._actor.to(self._device)
         self._q_1.to(self._device)
         self._q_2.to(self._device)
         self._value.to(self._device)
         self._target_value.to(self._device)
+
+        if self._multi_process:
+            worker = SACWorker(in_size, out_size, self._mini_batch_size)
+            init = worker.init_shared_worker_space(
+                num_workers=8,
+                actor={"model": self._actor, "optim": self._actor_optim},
+                q_1={"model": self._q_1, "optim": self._q_1_optim},
+                q_2={"model": self._q_2, "optim": self._q_2_optim},
+                value={"model": self._value, "optim": self._value_optim},
+                target={"model": self._target_value},
+            )
+            work_defs = [
+                Work(provides="actor", fn=SACWorker.actor, args=(self._device,)),
+                Work(
+                    provides="q_1",
+                    fn=SACWorker.q,
+                    args=("1", self._gamma, self._device),
+                ),
+                Work(
+                    provides="q_2",
+                    fn=SACWorker.q,
+                    args=("2", self._gamma, self._device),
+                ),
+                Work(
+                    provides="value",
+                    fn=SACWorker.value,
+                    args=(self._alpha, self._device),
+                ),
+            ]
+            self._process_orchestrator = ProcessOrchestrator(init, work_defs)
 
     def _init_replay_buffer(self):
         in_size, out_size = env_to_in_out_sizes(self._env)
@@ -201,7 +240,7 @@ class SoftActorCritic(Algo):
 
     def update_all(self, batch):
 
-        with timer("minibatch-forward"):
+        with timer("minibatch-setup"):
             states, actions, rewards, next_states, dones = batch
 
             # Move batch items to device, cast to float32
@@ -217,6 +256,21 @@ class SoftActorCritic(Algo):
                 -1, 1
             )
 
+            if self._multi_process:
+                data = WorkerSpace.data
+                data["mb:states"][:] = states[:]
+                data["mb:actions"][:] = actions[:]
+                data["mb:rewards"][:] == rewards[:]
+                data["mb:next_states"][:] = next_states[:]
+                data["mb:dones"][:] = dones[:]
+                data["mb:state_actions"][:] = torch.cat((states, actions), 1)[:]
+
+        if self._multi_process:
+            with timer("process_orchestrator"):
+                self._process_orchestrator.execute()
+                return
+
+        with timer("minibatch-forward"):
             self._q_1.zero_grad()
             self._q_2.zero_grad()
             self._actor.zero_grad()
