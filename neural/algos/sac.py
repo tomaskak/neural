@@ -243,16 +243,20 @@ class SoftActorCritic(Algo):
         with timer("minibatch-setup"):
             states, actions, rewards, next_states, dones = batch
 
+            device = self._device
+            if self._multi_process:
+                device = "cpu"
+
             # Move batch items to device, cast to float32
-            states = torch.tensor(states.astype(np.float32), device=self._device)
-            actions = torch.tensor(actions.astype(np.float32), device=self._device)
+            states = torch.tensor(states.astype(np.float32), device=device)
+            actions = torch.tensor(actions.astype(np.float32), device=device)
             rewards = torch.tensor(
-                rewards.astype(np.float32), device=self._device
+                rewards.astype(np.float32), device=device
             ).reshape(-1, 1)
             next_states = torch.tensor(
-                next_states.astype(np.float32), device=self._device
+                next_states.astype(np.float32), device=device
             )
-            dones = torch.tensor(dones.astype(np.float32), device=self._device).reshape(
+            dones = torch.tensor(dones.astype(np.float32), device=device).reshape(
                 -1, 1
             )
 
