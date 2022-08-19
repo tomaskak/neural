@@ -27,9 +27,9 @@ def write_item_fn(idx, start, length, key):
 
 def init_msgtime(msg_length, num_times):
     defs = [
-        ("input", "c", msg_length),
-        ("msg", "c", msg_length),
-        ("time", np.float32, num_times),
+        ("input", "c", (msg_length,)),
+        ("msg", "c", (msg_length,)),
+        ("time", np.float32, (num_times,)),
     ]
     return defs
 
@@ -53,6 +53,10 @@ def make_write_work_items(X, edges, init_args=None):
         args=init_args,
     )
     return work_defs, init
+
+
+def write_input(X):
+    WorkerSpace.data["input"][:] = X[:]
 
 
 class TestProcessOrchestrator:
@@ -94,7 +98,8 @@ class TestProcessOrchestrator:
 
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (
@@ -108,7 +113,8 @@ class TestProcessOrchestrator:
         work_defs, init = make_write_work_items(X, [("C", None)])
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (
@@ -123,7 +129,8 @@ class TestProcessOrchestrator:
         )
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (
@@ -139,7 +146,8 @@ class TestProcessOrchestrator:
         )
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (
@@ -155,7 +163,8 @@ class TestProcessOrchestrator:
         )
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (
@@ -171,7 +180,8 @@ class TestProcessOrchestrator:
         )
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (
@@ -188,7 +198,8 @@ class TestProcessOrchestrator:
         )
         orchestrator = ProcessOrchestrator(init, work_defs, lambda x: x)
 
-        success, output = orchestrator.execute(X)
+        write_input(X)
+        success, output = orchestrator.execute()
 
         assert success
         assert (

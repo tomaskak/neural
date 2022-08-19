@@ -4,7 +4,7 @@ from multiprocessing.pool import Pool
 from multiprocessing import Process, Event
 from time import time
 from copy import deepcopy
-from dill import dumps, loads
+from threading import Lock
 
 import numpy as np
 
@@ -92,32 +92,35 @@ def check_row_is_clear(matrix, row):
 
 
 def init_pool_wrap(shmem_name, shmem_space, init_defs, init_args=None):
-    print(f"initializing space...")
+    # print(f"initializing space...")
 
     data = {}
     WorkerSpace.block = SharedMemory(name=shmem_name, create=False, size=shmem_space)
     block = WorkerSpace.block
-    print(f"block={block}")
-    print(f"block.buf={block.buf}")
+    # print(f"block={block}")
+    # print(f"block.buf={block.buf}")
 
     keys_are_unique = set()
 
     curr_offset = 0
-    for key, dtype, size in init_defs:
+    for key, dtype, shape in init_defs:
         if key in keys_are_unique:
             raise ValueError(f"duplicate key {key}")
         keys_are_unique.add(key)
-        print(
-            f"adding {key} with size {size}, dtype={dtype}, starting at offset {curr_offset}"
-        )
-        print(
-            f"reading bytes={bytes(block.buf[curr_offset:curr_offset+size*np.dtype(dtype).itemsize])}"
-        )
+        # print(
+        #     f"adding {key} with shape {shape}, dtype={dtype}, starting at offset {curr_offset}"
+        # )
         data[key] = np.ndarray(
-            shape=(size,), dtype=dtype, buffer=block.buf, offset=curr_offset
+            shape=shape, dtype=dtype, buffer=block.buf, offset=curr_offset
         )
-        print(f"initialized {key} data={data[key]}")
-        curr_offset += np.dtype(dtype).itemsize * size
+        # print(f"initialized {key} data={data[key]}")
+        def _mult_shape(*shape):
+            out = 1
+            for dim in shape:
+                out *= dim
+            return out
+
+        curr_offset += np.dtype(dtype).itemsize * _mult_shape(*shape)
 
     if init_args is not None:
         for key, value in init_args:
@@ -125,7 +128,7 @@ def init_pool_wrap(shmem_name, shmem_space, init_defs, init_args=None):
             data[key] = value
 
     WorkerSpace.data = data
-    print(f"WorkerSpace.data={WorkerSpace.data}")
+    # print(f"WorkerSpace.data={WorkerSpace.data}")
     print(f"initializing space done...")
 
 
@@ -167,7 +170,7 @@ class ProcessOrchestrator:
         )
         self._data = WorkerSpace.data
 
-    def execute(self, X):
+    def execute(self):
         adjacency_matrix = deepcopy(self._adjacency_matrix)
         matrix_keys = self._matrix_keys
         done_event, error_event = (Event(), Event())
@@ -175,11 +178,11 @@ class ProcessOrchestrator:
         work_items = self._work_items
         completed = 0
         total = len(self._work_items)
+        lock = Lock()
 
-        print(f"adjacency_matrix = {adjacency_matrix}")
+        # print(f"adjacency_matrix = {adjacency_matrix}")
 
-        self._data["input"][:] = X
-        print(f"self._dat={self._data}")
+        # print(f"self._dat={self._data}")
 
         def error_callback(e):
             print(f"exception in worker encountered: {e}")
@@ -187,8 +190,8 @@ class ProcessOrchestrator:
             done_event.set()
 
         def callback(key):
-            nonlocal adjacency_matrix, matrix_keys, work_items, completed, total, done_event, pool
-            print(f"callback for {key}...")
+            nonlocal adjacency_matrix, matrix_keys, work_items, completed, total, done_event, pool, lock
+            # print(f"callback for {key}...")
             ij = matrix_keys[key]
             for k, row in enumerate(adjacency_matrix):
                 is_set = row[ij]
@@ -202,15 +205,17 @@ class ProcessOrchestrator:
                             callback=callback,
                             error_callback=error_callback,
                         )
+            lock.acquire()
             completed += 1
             if completed == total:
-                print(f"setting done event...")
+                # print(f"setting done event...")
                 done_event.set()
+            lock.release()
 
-        print(f"Kicking off work..")
+        # print(f"Kicking off work..")
         for i in range(len(adjacency_matrix)):
             if check_row_is_clear(adjacency_matrix, i):
-                print(f"initial kick off for {i}")
+                # print(f"initial kick off for {i}")
                 pool.apply_async(
                     work_items[i].fn,
                     work_items[i].args,
@@ -218,9 +223,15 @@ class ProcessOrchestrator:
                     error_callback=error_callback,
                 )
 
-        print(f"waiting on done event...")
-        done_event.wait(timeout=30.0)
+        # print(f"waiting on done event...")
+        done_event.wait(timeout=20.0)
         if error_event.is_set():
+            return False, None
+
+        if not done_event.is_set():
+            print(
+                f"timeout waiting for done_event, lock is locked {lock.locked()}, completed={completed}"
+            )
             return False, None
 
         return True, self._out_fn(self._data) if self._out_fn is not None else None
