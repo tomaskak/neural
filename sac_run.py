@@ -65,8 +65,8 @@ if __name__ == "__main__":
         "multiprocess": args.multiprocess,
     }
 
-    env_key = "Ant-v4"
-    # env_key = "InvertedPendulum-v4"
+    # env_key = "Ant-v4"
+    env_key = "InvertedPendulum-v4"
     env = gym.make(env_key)
     sac = SoftActorCritic(hypers, layers, training_params, env)
 

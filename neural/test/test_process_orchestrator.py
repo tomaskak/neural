@@ -48,7 +48,7 @@ def make_write_work_items(X, edges, init_args=None):
         )
     init = Init(
         num_workers=2,
-        space_needed=len(X) + len(work_defs) * np.dtype(np.float32).itemsize,
+        space_needed=len(X) + len(work_defs) * np.dtype(np.float32).itemsize * 2,
         init_defs=init_msgtime(len(X), len(work_defs)),
         args=init_args,
     )

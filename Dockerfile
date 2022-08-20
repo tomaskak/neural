@@ -1,4 +1,5 @@
-FROM nvidia/cuda:11.7.1-base-ubuntu22.04
+ARG BASE=nvidia/cuda:11.7.1-base-ubuntu22.04
+FROM $BASE
 
 WORKDIR /workarea
 

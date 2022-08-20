@@ -4,6 +4,7 @@ gym
 gym[classic_control]
 gym[mujoco]
 pytest
+pytest-timeout
 plotly
 pandas
 dash

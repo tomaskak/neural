@@ -1,0 +1,47 @@
+iteration-0 results={'average': -7069.6802575711945, 'max': -620.6260349084594, 'min': -31954.44379898841}
+{
+    "#1-forward": {
+        "count": 11111,
+        "average(ms)": 1.0708568227268576
+    },
+    "#2-cat": {
+        "count": 11111,
+        "average(ms)": 0.003699704450810377
+    },
+    "#3-qs": {
+        "count": 11111,
+        "average(ms)": 0.21196308621792884
+    },
+    "#4-misc": {
+        "count": 11111,
+        "average(ms)": 0.006577936625160929
+    },
+    "minibatch-forward": {
+        "count": 11111,
+        "average(ms)": 1.3657750045670622
+    },
+    "#5-losses": {
+        "count": 11111,
+        "average(ms)": 0.03302435282272134
+    },
+    "#6-backward": {
+        "count": 11111,
+        "average(ms)": 0.8232799102931521
+    },
+    "minibatch-backward": {
+        "count": 11111,
+        "average(ms)": 0.8594774554007747
+    },
+    "minibatch-update-grads": {
+        "count": 11110,
+        "average(ms)": 0.516175601420158
+    },
+    "training": {
+        "count": 1,
+        "average(ms)": 32514.13917541504
+    },
+    "test": {
+        "count": 1,
+        "average(ms)": 763.4012699127197
+    }
+}

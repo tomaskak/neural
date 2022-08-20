@@ -5,8 +5,12 @@ from ..model.layer_factory import to_layers, env_to_in_out_sizes
 from ..util.exp_replay import ExpReplay
 from ..tools.timer import timer
 from ..algos.sac_worker import SACWorker
+from ..algos.sac_context import SACContext
 from ..util.process_orchestrator import ProcessOrchestrator, Work, WorkerSpace
 
+from ..algos.sac_train import sac_train
+
+from queue import Queue
 from copy import deepcopy
 
 import torch
@@ -54,27 +58,30 @@ class SoftActorCritic(Algo):
 
         in_size, out_size = env_to_in_out_sizes(env)
 
-        self._actor = NormalModel(
+        self.context = SACContext
+
+        self.context.actor = NormalModel(
             "actor", to_layers(in_size, out_size, layers["actor"]), None  # graph_sink
         )
 
-        self._q_1 = Model("q_1", to_layers(in_size, out_size, layers["q_1"]), None)
+        self.context.q_1 = Model(
+            "q_1", to_layers(in_size, out_size, layers["q_1"]), None
+        )
 
-        self._q_2 = Model(
+        self.context.q_2 = Model(
             "q_2",
             to_layers(in_size, out_size, layers["q_2"]),
             None,
         )
 
-        self._value = Model(
+        self.context.value = Model(
             "value",
             to_layers(in_size, out_size, layers["value"]),
             None,
         )
 
-        self._target_value = Model("target_value", [], None)
-        self._target_value._layers = deepcopy(self._value.layers())
-        self._target_value.requires_grad_(False)
+        self.context.target_value = deepcopy(self.context.value)
+        self.context.target_value.requires_grad_(False)
 
         self._gamma = hypers.get("future_reward_discount", 0.99)
         self._q_lr = hypers.get("q_lr", 0.001)
@@ -84,29 +91,37 @@ class SoftActorCritic(Algo):
         self._replay_size = hypers.get("experience_replay_size", 1000 * 1000)
         self._mini_batch_size = hypers.get("minibatch_size", 64)
 
-        self._actor_optim = torch.optim.Adam(self._actor.parameters(), self._actor_lr)
-        self._q_1_optim = torch.optim.Adam(self._q_1.parameters(), self._q_lr)
-        self._q_2_optim = torch.optim.Adam(self._q_2.parameters(), self._q_lr)
-        self._value_optim = torch.optim.Adam(self._value.parameters(), self._v_lr)
+        self.context.actor_optim = torch.optim.Adam(
+            self.context.actor.parameters(), self._actor_lr
+        )
+        self.context.q_1_optim = torch.optim.Adam(
+            self.context.q_1.parameters(), self._q_lr
+        )
+        self.context.q_2_optim = torch.optim.Adam(
+            self.context.q_2.parameters(), self._q_lr
+        )
+        self.context.value_optim = torch.optim.Adam(
+            self.context.value.parameters(), self._v_lr
+        )
 
         self._init_replay_buffer()
 
-        self._q_1_loss_fn = torch.nn.MSELoss()
-        self._q_2_loss_fn = torch.nn.MSELoss()
-        self._value_loss_fn = torch.nn.MSELoss()
-        self._actor_loss_fn = lambda x, y: (x - y).mean()
+        self.context.q_1_loss_fn = torch.nn.MSELoss()
+        self.context.q_2_loss_fn = torch.nn.MSELoss()
+        self.context.value_loss_fn = torch.nn.MSELoss()
+        self.context.actor_loss_fn = lambda x, y: (x - y).mean()
 
-        self._actor.share_memory()
-        self._q_1.share_memory()
-        self._q_2.share_memory()
-        self._value.share_memory()
-        self._target_value.share_memory()
+        self.context.actor.share_memory()
+        self.context.q_1.share_memory()
+        self.context.q_2.share_memory()
+        self.context.value.share_memory()
+        self.context.target_value.share_memory()
 
-        self._actor.to(self._device)
-        self._q_1.to(self._device)
-        self._q_2.to(self._device)
-        self._value.to(self._device)
-        self._target_value.to(self._device)
+        self.context.actor.to(self._device)
+        self.context.q_1.to(self._device)
+        self.context.q_2.to(self._device)
+        self.context.value.to(self._device)
+        self.context.target_value.to(self._device)
 
         self._total_elapsed_time = 0.0
         self._total_update_all_times = 0.0
@@ -116,10 +131,10 @@ class SoftActorCritic(Algo):
             init = worker.init_shared_worker_space(
                 num_workers=8,
                 actor={"model": self._actor, "optim": self._actor_optim},
-                q_1={"model": self._q_1, "optim": self._q_1_optim},
-                q_2={"model": self._q_2, "optim": self._q_2_optim},
-                value={"model": self._value, "optim": self._value_optim},
-                target={"model": self._target_value},
+                q_1={"model": self.context.q_1, "optim": self.context.q_1_optim},
+                q_2={"model": self.context.q_2, "optim": self.context.q_2_optim},
+                value={"model": self.context.value, "optim": self.context.value_optim},
+                target={"model": self.context.target_value},
             )
             work_defs = [
                 Work(provides="actor", fn=SACWorker.actor, args=(self._device,)),
@@ -150,16 +165,16 @@ class SoftActorCritic(Algo):
         )
 
     def load(self, settings):
-        self._actor.load_state_dict(settings["actor"])
-        self._q_1.load_state_dict(settings["q_1"])
-        self._q_2.load_state_dict(settings["q_2"])
-        self._value.load_state_dict(settings["value"])
-        self._target_value.load_state_dict(settings["target_value"])
+        self.context.actor.load_state_dict(settings["actor"])
+        self.context.q_1.load_state_dict(settings["q_1"])
+        self.context.q_2.load_state_dict(settings["q_2"])
+        self.context.value.load_state_dict(settings["value"])
+        self.context.target_value.load_state_dict(settings["target_value"])
 
-        self._actor_optim.load_state_dict(settings["actor_optim"])
-        self._q_1_optim.load_state_dict(settings["q_1_optim"])
-        self._q_2_optim.load_state_dict(settings["q_2_optim"])
-        self._value_optim.load_state_dict(settings["value_optim"])
+        self.context.actor_optim.load_state_dict(settings["actor_optim"])
+        self.context.q_1_optim.load_state_dict(settings["q_1_optim"])
+        self.context.q_2_optim.load_state_dict(settings["q_2_optim"])
+        self.context.value_optim.load_state_dict(settings["value_optim"])
 
         hypers = settings["hyperparameters"]
         self._gamma = hypers["future_reward_discount"]
@@ -174,15 +189,15 @@ class SoftActorCritic(Algo):
 
     def save(self):
         return {
-            "actor": self._actor.state_dict(),
-            "q_1": self._q_1.state_dict(),
-            "q_2": self._q_2.state_dict(),
-            "value": self._value.state_dict(),
-            "actor_optim": self._actor_optim.state_dict(),
-            "q_1_optim": self._q_1_optim.state_dict(),
-            "q_2_optim": self._q_2_optim.state_dict(),
-            "value_optim": self._value_optim.state_dict(),
-            "target_value": self._target_value.state_dict(),
+            "actor": self.context.actor.state_dict(),
+            "q_1": self.context.q_1.state_dict(),
+            "q_2": self.context.q_2.state_dict(),
+            "value": self.context.value.state_dict(),
+            "actor_optim": self.context.actor_optim.state_dict(),
+            "q_1_optim": self.context.q_1_optim.state_dict(),
+            "q_2_optim": self.context.q_2_optim.state_dict(),
+            "value_optim": self.context.value_optim.state_dict(),
+            "target_value": self.context.target_value.state_dict(),
             "hyperparameters": {
                 "future_reward_discount": self._gamma,
                 "q_lr": self._q_lr,
@@ -207,11 +222,11 @@ class SoftActorCritic(Algo):
         for episode in range(EPISODES):
             observation = self._env.reset()
             for step in range(STEPS):
-                self._actor.to("cpu")
+                self.context.actor.to("cpu")
                 total_steps += 1
                 action = None
                 with torch.no_grad():
-                    actions, log_probs = self._actor.forward(
+                    actions, log_probs = self.context.actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
 
@@ -239,7 +254,7 @@ class SoftActorCritic(Algo):
                     and total_steps % ALL_UPDATE == 0
                 ):
                     batch = self._replay_buffer.sample(self._mini_batch_size)
-                    self._actor.to(self._device)
+                    self.context.actor.to(self._device)
                     self.update_all(batch)
 
     def update_all(self, batch):
@@ -284,57 +299,19 @@ class SoftActorCritic(Algo):
                 self._process_orchestrator.execute()
                 return
 
-        with timer("minibatch-forward"):
-            self._q_1.zero_grad()
-            self._q_2.zero_grad()
-            self._actor.zero_grad()
-            self._value.zero_grad()
-
-            # Everything before this line should be done at replay buffer loading time or minibatch creation.
-            predicted_values = self._value.forward(states)
-            new_actions, log_probs = self._actor.forward(states)
-            predicted_q_1s = self._q_1.forward(state_actions)
-            predicted_q_2s = self._q_2.forward(state_actions)
-            target_next_state_values = self._target_value.forward(next_states)
-
-            new_state_actions = torch.cat((states, new_actions), 1)
-
-            predicted_new_qs = torch.minimum(
-                self._q_1.forward(new_state_actions),
-                self._q_2.forward(new_state_actions),
+        next_batch_q = Queue()
+        report_queue = Queue()
+        done_queue = Queue()
+        next_batch_q.put(
+            (
+                "PROCESS",
+                (0, (states, actions, state_actions, rewards, next_states, dones)),
             )
-
-            # Q updates
-            target_qs = rewards + dones * self._gamma * target_next_state_values
-            target_qs = target_qs.reshape(-1, 1)
-
-        with timer("minibatch-backward"):
-            q_1_loss = self._q_1_loss_fn(predicted_q_1s, target_qs.float())
-            q_2_loss = self._q_2_loss_fn(predicted_q_2s, target_qs.float())
-
-            q_1_loss.backward()
-            q_2_loss.backward()
-
-            # Value update
-            target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
-            v_loss = self._value_loss_fn(predicted_values, target_vs.float())
-
-            v_loss.backward()
-
-            # Policy update
-            loss = self._actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
-            loss.backward()
-
-        with timer("minibatch-update-grads"):
-            self._actor_optim.step()
-            self._q_1_optim.step()
-            self._q_2_optim.step()
-            self._value_optim.step()
-            with torch.no_grad():
-                for target, update in zip(
-                    self._target_value.parameters(), self._value.parameters()
-                ):
-                    target.copy_(self._alpha * update + (1.0 - self._alpha) * target)
+        )
+        next_batch_q.put("STOP")
+        sac_train(
+            self.context, next_batch_q, self._hypers, 100, report_queue, done_queue
+        )
 
     def test(self, render=False) -> dict:
         result = {"average": 0, "max": None, "min": None}
@@ -343,14 +320,14 @@ class SoftActorCritic(Algo):
         EPISODES = self._training_params.get("episodes_per_test", 10)
 
         total_reward = 0
-        self._actor.to("cpu")
+        self.context.actor.to("cpu")
         for i in range(EPISODES):
             observation = self._env.reset()
             current_total_reward = 0
             for step in range(STEPS):
                 action = None
                 with torch.no_grad():
-                    actions, log_probs = self._actor.forward(
+                    actions, log_probs = self.context.actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float()
                     )
 
