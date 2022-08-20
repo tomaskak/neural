@@ -48,7 +48,7 @@ def sac_train(
 
 def process_batch(context: SACContext, hypers: dict, batch: tuple):
     with timer("process-one-batch"):
-        states, actions, state_actions, rewards, next_states, dones = batch
+        states, actions, rewards, next_states, dones, state_actions = batch
 
         context.q_1.zero_grad()
         context.q_2.zero_grad()
