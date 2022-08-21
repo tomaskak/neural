@@ -1,8 +1,9 @@
 from ..algos.sac_context import SACContext
-from ..tools.timer import timer
 from queue import Queue
+from ..tools.timer import timer, init_timer_manager, PrintManager
 
 import torch
+import time
 
 
 def sac_train(
@@ -26,6 +27,7 @@ def sac_train(
     On completing steps_to_report number of training steps a dict with info of training progress
     will be pushed into the report_queue.
     """
+    init_timer_manager(PrintManager(5 * 1000))
     items_processed = 0
     for item in iter(next_batch_q.get, "STOP"):
         if type(item) == tuple:
@@ -34,7 +36,13 @@ def sac_train(
                 batch_id, batch = args
                 items_processed += 1
                 if items_processed % steps_to_report == 0:
-                    report_queue.put({"completed": items_processed})
+                    start = time.time()
+                    try:
+                        report_queue.put_nowait({"completed": items_processed})
+                    except Exception as e:
+                        print(f"exception putting results: {e}")
+                        pass
+                    context.update_shared()
 
                 process_batch(context, hypers, batch)
 
@@ -92,7 +100,6 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         loss = context.actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
         loss.backward()
 
-    with timer("minibatch-update-grads"):
         context.actor_optim.step()
         context.q_1_optim.step()
         context.q_2_optim.step()
@@ -105,3 +112,5 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
                     hypers["target_update_step"] * update
                     + (1.0 - hypers["target_update_step"]) * target
                 )
+
+        context.shared.actor = context.actor

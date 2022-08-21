@@ -1,5 +1,6 @@
 from ..util.exp_replay import ExpReplay
 
+import time
 import torch
 from queue import Queue
 
@@ -29,6 +30,7 @@ def sac_replay(
                 len(replay_buf) >= hypers["minibatch_size"] * 2
                 and push_batch_q.qsize() < push_q_length
             ):
+                start = time.time()
                 sample = replay_buf.sample(hypers["minibatch_size"])
 
                 new_sample = []
@@ -44,8 +46,7 @@ def sac_replay(
                             torch.tensor(part, device=device, dtype=torch.float32)
                         )
                 new_sample.append(torch.cat((new_sample[0], new_sample[1]), dim=1))
-                push_batch_q.put(new_sample)
-
+                push_batch_q.put(("PROCESS", (next_id, new_sample)))
                 live_samples[next_id] = new_sample
                 next_id += 1
 

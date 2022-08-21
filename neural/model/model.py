@@ -20,6 +20,7 @@ class Model(torch.nn.Module):
 
     def forward(self, x):
         next_input = x
+
         for l in self._layers:
             next_input = l.forward(next_input)
         return next_input

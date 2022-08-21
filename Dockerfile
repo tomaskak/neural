@@ -15,4 +15,6 @@ RUN pip3 install -r requirements.txt
 
 COPY . /workarea
 
+RUN mkdir -p /vol/run_artifacts
+
 ENTRYPOINT ["python3"] 

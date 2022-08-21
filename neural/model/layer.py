@@ -20,7 +20,7 @@ class Layer(nn.Module):
 
     def __init__(self, name: str, in_size: int, out_size: int, bias: bool):
         super().__init__()
-        self.name = name
+        self._name = name
         self.weights = nn.Parameter(data=xavier_init(in_size, out_size))
         self.bias = nn.Parameter(zeros((out_size,))) if bias else None
         self._shape = (in_size, out_size)
@@ -46,6 +46,10 @@ class Layer(nn.Module):
     @property
     def shape(self):
         return self._shape
+
+    @property
+    def name(self):
+        return self._name
 
 
 class ActivatedLayer(Layer):
