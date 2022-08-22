@@ -2,11 +2,8 @@ from ..algos.algo import Algo
 from ..model.model import Model, NormalModel
 from ..model.layer import Layer
 from ..model.layer_factory import to_layers, env_to_in_out_sizes
-from ..util.exp_replay import ExpReplay
 from ..tools.timer import timer
-from ..algos.sac_worker import SACWorker
 from ..algos.sac_context import SACContext
-from ..util.process_orchestrator import ProcessOrchestrator, Work, WorkerSpace
 
 from ..algos.sac_train import sac_train
 from ..algos.sac_replay import sac_replay
@@ -14,9 +11,13 @@ from ..algos.sac_replay import sac_replay
 from copy import deepcopy
 from torch.multiprocessing import Queue, Process
 from queue import Empty
-
 import torch
 import numpy as np
+import time
+
+
+def actor_loss(x, y):
+    return (x - y).mean()
 
 
 class SoftActorCritic(Algo):
@@ -33,6 +34,7 @@ class SoftActorCritic(Algo):
         "target_update_step": float,
         "experience_replay_size": int,
         "minibatch_size": int,
+        "max_action": float,
     }
 
     # The algorithm has a model not listed here for 'target_value' but this by
@@ -111,18 +113,17 @@ class SoftActorCritic(Algo):
         self.context.q_1_loss_fn = torch.nn.MSELoss()
         self.context.q_2_loss_fn = torch.nn.MSELoss()
         self.context.value_loss_fn = torch.nn.MSELoss()
-        # self.context.actor_loss_fn = lambda x, y: (x - y).mean()
-        self.context.actor_loss_fn = torch.nn.MSELoss()
+        self.context.actor_loss_fn = actor_loss
 
         self.context.update_shared()
         self.set_device_and_shmem()
 
     def set_device_and_shmem(self):
-        self.context.shared.actor.share_memory()
-        self.context.shared.q_1.share_memory()
-        self.context.shared.q_2.share_memory()
-        self.context.shared.value.share_memory()
-        self.context.shared.target_value.share_memory()
+        self.context.shared.actor.to("cpu").share_memory()
+        self.context.shared.q_1.to("cpu").share_memory()
+        self.context.shared.q_2.to("cpu").share_memory()
+        self.context.shared.value.to("cpu").share_memory()
+        self.context.shared.target_value.to("cpu").share_memory()
 
         self.context.actor.to(self._device)
         self.context.q_1.to(self._device)
@@ -145,6 +146,8 @@ class SoftActorCritic(Algo):
         self.set_device_and_shmem()
 
         hypers = settings["hyperparameters"]
+        hypers["max_action"] = hypers.get("max_action", 1.0)
+        self._hypers = hypers
         self._gamma = hypers["future_reward_discount"]
         self._q_lr = hypers["q_lr"]
         self._v_lr = hypers["v_lr"]
@@ -172,6 +175,7 @@ class SoftActorCritic(Algo):
                 "target_update_step": self._alpha,
                 "experience_replay_size": self._replay_size,
                 "minibatch_size": self._mini_batch_size,
+                "max_action": self._hypers["max_action"],
             },
         }
 
@@ -183,8 +187,7 @@ class SoftActorCritic(Algo):
         pass
 
     def start(self, render=False, save_hook=None, result_hook=None):
-        replay_buf_q = Queue(maxsize=100)
-        batch_done_q = Queue()
+        replay_buf_q = Queue(maxsize=20)
         next_batch_q = Queue()
         report_queue = Queue()
 
@@ -210,7 +213,7 @@ class SoftActorCritic(Algo):
                 self._hypers,
                 200,
                 report_queue,
-                batch_done_q,
+                replay_buf_q,
             ),
         )
 
@@ -238,6 +241,8 @@ class SoftActorCritic(Algo):
                                         np.array([observation]), device="cpu"
                                     ).float()
                                 )
+                            rng = self._hypers["max_action"]
+                            actions = torch.clamp(actions * rng, min=-rng, max=rng)
 
                             next_observation, reward, done, info = self._env.step(
                                 actions[0].numpy()

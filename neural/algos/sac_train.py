@@ -3,7 +3,6 @@ from queue import Queue
 from ..tools.timer import timer, init_timer_manager, PrintManager
 
 import torch
-import time
 
 
 def sac_train(
@@ -36,17 +35,18 @@ def sac_train(
                 batch_id, batch = args
                 items_processed += 1
                 if items_processed % steps_to_report == 0:
-                    start = time.time()
                     try:
                         report_queue.put_nowait({"completed": items_processed})
                     except Exception as e:
                         print(f"exception putting results: {e}")
-                        pass
+                    # This updates the state of all models in the 'shared' structure.
                     context.update_shared()
 
                 process_batch(context, hypers, batch)
 
                 done_queue.put(("DONE", batch_id))
+                for item in batch:
+                    del item
                 del batch
             else:
                 print(f"Received unknown command in sac_train: cmd={cmd}, args={args}")
@@ -63,12 +63,14 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         context.actor.zero_grad()
         context.value.zero_grad()
 
-        # Everything before this line should be done at replay buffer loading time or minibatch creation.
         predicted_values = context.value.forward(states)
         new_actions, log_probs = context.actor.forward(states)
         predicted_q_1s = context.q_1.forward(state_actions)
         predicted_q_2s = context.q_2.forward(state_actions)
         target_next_state_values = context.target_value.forward(next_states)
+
+        rng = hypers["max_action"]
+        new_actions = torch.clamp(new_actions * rng, min=-rng, max=rng)
 
         new_state_actions = torch.cat((states, new_actions), 1)
 
@@ -113,4 +115,6 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
                     + (1.0 - hypers["target_update_step"]) * target
                 )
 
+        # Actor is the only model that needs to be updated on each step as the new data entered into
+        # the replay buffer benefits from the latest model.
         context.shared.actor = context.actor

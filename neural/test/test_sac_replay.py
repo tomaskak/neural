@@ -65,8 +65,10 @@ class TestSACReplay(TestCase):
         self.call()
 
         assert self._push_batch_q.qsize() == 1
-        batch = self._push_batch_q.get()
+        cmd, args = self._push_batch_q.get()
+        batch_id, batch = args
 
+        assert cmd == "PROCESS"
         assert len(batch) == 6
 
         for part in batch:

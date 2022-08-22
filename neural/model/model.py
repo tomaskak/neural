@@ -1,7 +1,7 @@
 import torch
 
 from copy import deepcopy
-from neural.tools.sink import SinkClient
+from ..tools.sink import SinkClient
 
 
 class Model(torch.nn.Module):
@@ -69,7 +69,6 @@ class NormalModel(Model):
         Returns: [ [action0, action1, ..., actionN], ... ] ,
                  [ log(P(action0)) + log(P(action1)) ... + log(P(actionN)), ... ]
         """
-
         actions = []
         log_prob = None
         # Iterate over each pair of mu and sigma.

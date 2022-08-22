@@ -1,4 +1,8 @@
-class SACModels:
+import torch
+from copy import deepcopy
+
+
+class SACCore:
     def __init__(self):
         self._actor = None
         self._q_1 = None
@@ -84,55 +88,64 @@ class SACModels:
         self._value_optim = new_value_optim
 
 
-class SACShared(SACModels):
+class SACShared(SACCore):
     def __init__(self):
         super().__init__()
 
     def _assign_or_copy(self, attr, new):
         current = getattr(self, attr)
         if current is None:
-            setattr(self, attr, new)
+            setattr(self, attr, deepcopy(new))
+        else:
+            with torch.no_grad():
+                for old, n in zip(current.parameters(), new.parameters()):
+                    old[:] = n[:]
+
+    def _assign_or_copy_optim(self, attr, new):
+        current = getattr(self, attr)
+        if current is None:
+            setattr(self, attr, deepcopy(new))
         else:
             current.load_state_dict(new.state_dict())
 
-    @SACModels.actor.setter
+    @SACCore.actor.setter
     def actor(self, new_actor):
         self._assign_or_copy("_actor", new_actor)
 
-    @SACModels.q_1.setter
+    @SACCore.q_1.setter
     def q_1(self, new_q_1):
         self._assign_or_copy("_q_1", new_q_1)
 
-    @SACModels.q_2.setter
+    @SACCore.q_2.setter
     def q_2(self, new_q_2):
         self._assign_or_copy("_q_2", new_q_2)
 
-    @SACModels.value.setter
+    @SACCore.value.setter
     def value(self, new_value):
         self._assign_or_copy("_value", new_value)
 
-    @SACModels.target_value.setter
+    @SACCore.target_value.setter
     def target_value(self, new_target_value):
         self._assign_or_copy("_target_value", new_target_value)
 
-    @SACModels.actor_optim.setter
+    @SACCore.actor_optim.setter
     def actor_optim(self, new_actor_optim):
-        self._assign_or_copy("_actor_optim", new_actor_optim)
+        self._assign_or_copy_optim("_actor_optim", new_actor_optim)
 
-    @SACModels.q_1_optim.setter
+    @SACCore.q_1_optim.setter
     def q_1_optim(self, new_q_1_optim):
-        self._assign_or_copy("_q_1_optim", new_q_1_optim)
+        self._assign_or_copy_optim("_q_1_optim", new_q_1_optim)
 
-    @SACModels.q_2_optim.setter
+    @SACCore.q_2_optim.setter
     def q_2_optim(self, new_q_2_optim):
-        self._assign_or_copy("_q_2_optim", new_q_2_optim)
+        self._assign_or_copy_optim("_q_2_optim", new_q_2_optim)
 
-    @SACModels.value_optim.setter
+    @SACCore.value_optim.setter
     def value_optim(self, new_value_optim):
-        self._assign_or_copy("_value_optim", new_value_optim)
+        self._assign_or_copy_optim("_value_optim", new_value_optim)
 
 
-class SACContext(SACModels):
+class SACContext(SACCore):
     def __init__(self):
         self._actor_loss_fn = None
         self._q_1_loss_fn = None

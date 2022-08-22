@@ -10,26 +10,42 @@ import torch
 import pytest
 
 
-def test_can_pickle_context():
+def make_a_context():
     context = SACContext()
 
     context.actor = NormalModel("actor", [ActivatedLayer("l1", 100, 200, Tanh(), True)])
     context.actor_optim = Adam(context.actor.parameters(), 0.001)
     context.actor_loss_fn = MSELoss()
+
+    context.q_1 = deepcopy(context.actor)
+    context.q_2 = deepcopy(context.actor)
+    context.value = deepcopy(context.actor)
+    context.target_value = deepcopy(context.actor)
+
+    context.q_1_optim = deepcopy(context.actor_optim)
+    context.q_2_optim = deepcopy(context.actor_optim)
+    context.value_optim = deepcopy(context.actor_optim)
+    context.target_value_optim = deepcopy(context.actor_optim)
+
+    context.q_1_loss_fn = deepcopy(context.actor_loss_fn)
+    context.q_2_loss_fn = deepcopy(context.actor_loss_fn)
+    context.value_loss_fn = deepcopy(context.actor_loss_fn)
+    context.target_value_loss_fn = deepcopy(context.actor_loss_fn)
+
+    return context
+
+
+def test_can_pickle_context():
+    context = make_a_context()
 
     output = dumps(context)
     restored = loads(output)
 
 
 def test_can_pickle_and_share():
-    context = SACContext()
-
-    context.actor = NormalModel("actor", [ActivatedLayer("l1", 100, 200, Tanh(), True)])
-    context.actor_optim = Adam(context.actor.parameters(), 0.001)
-    context.actor_loss_fn = MSELoss()
+    context = make_a_context()
 
     context.update_shared()
-
     context.shared.actor.share_memory()
 
     pickled = dumps(context)

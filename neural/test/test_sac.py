@@ -1,4 +1,4 @@
-from neural.algos.sac import SoftActorCritic
+from neural.algos.sac_mp import SoftActorCritic
 
 from gym import make
 
