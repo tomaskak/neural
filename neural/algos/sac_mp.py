@@ -187,7 +187,7 @@ class SoftActorCritic(Algo):
         pass
 
     def start(self, render=False, save_hook=None, result_hook=None):
-        replay_buf_q = Queue(maxsize=20)
+        replay_buf_q = Queue(maxsize=10000)
         next_batch_q = Queue()
         report_queue = Queue()
 
@@ -227,6 +227,7 @@ class SoftActorCritic(Algo):
         SAVE_TIME = self._training_params.get("save_on_iteration", 100)
 
         iteration = 0
+        time_limit_truncation = 0
         last_report = {"completed": 0}
         while True:
             with timer("explore-iteration"):
@@ -242,11 +243,17 @@ class SoftActorCritic(Algo):
                                     ).float()
                                 )
                             rng = self._hypers["max_action"]
-                            actions = torch.clamp(actions * rng, min=-rng, max=rng)
+                            actions = actions * rng
+                            # actions = torch.clamp(actions * rng, min=-rng, max=rng)
 
                             next_observation, reward, done, info = self._env.step(
                                 actions[0].numpy()
                             )
+                            # print(f"info={info}")
+                            done_value = 0.0 if done else 1.0
+                            if done and info["TimeLimit.truncated"]:
+                                time_limit_truncation +=1
+                                done_value = 1.0
 
                             replay_buf_q.put(
                                 (
@@ -279,9 +286,10 @@ class SoftActorCritic(Algo):
                 pass
 
             with timer("test"):
+                replay_buf_q.put(("TEST", {}))
                 test_result = self.test(render)
                 print(
-                    f"training-iterations={last_report['completed']} results={test_result}"
+                    f"training-iterations={last_report['completed']} results={test_result}, time_limit_reached={time_limit_truncation}"
                 )
                 if result_hook is not None:
                     result_hook(test_result)
@@ -302,6 +310,7 @@ class SoftActorCritic(Algo):
         EPISODES = self._training_params.get("episodes_per_test", 10)
 
         total_reward = 0
+        total_steps = 0
         for i in range(EPISODES):
             observation = self._env.reset()
             current_total_reward = 0
@@ -321,6 +330,7 @@ class SoftActorCritic(Algo):
                         self._env.render()
 
                     if done or step == STEPS - 1:
+                        total_steps += step
                         total_reward += current_total_reward
                         if (
                             result["max"] is None
@@ -334,6 +344,8 @@ class SoftActorCritic(Algo):
                             result["min"] = current_total_reward
                         break
                     observation = next_observation
-        result["average"] = total_reward / EPISODES
+        result["average"] = round(total_reward / EPISODES,2)
+        result["average_per_step"] = round(total_reward/total_steps,2)
+        result["average_steps_per_episode"] = round(total_steps / EPISODES,2)
 
         return result

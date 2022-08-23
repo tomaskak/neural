@@ -23,7 +23,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    init_timer_manager(PrintManager(5 * 1000))
+    init_timer_manager(PrintManager(5000))
 
     hypers = {
         "future_reward_discount": 0.995,
@@ -32,7 +32,7 @@ if __name__ == "__main__":
         "actor_lr": 0.001,
         "max_action": 1.0,
         "target_update_step": 0.001,
-        "experience_replay_size": 10 * 1000 * 1000,
+        "experience_replay_size": 1000 * 1000,
         "minibatch_size": 128,
     }
     layers = {
@@ -61,10 +61,10 @@ if __name__ == "__main__":
         "episodes_per_training": 30,
         "max_steps": 10000,
         "steps_between_updates": 1,
-        "episodes_per_test": 10,
+        "episodes_per_test": 5,
         "training_iterations": 100 if args.iterations is None else args.iterations,
         "device": "cuda",
-        "save_on_iteration": 20,
+        "save_on_iteration": 5,
     }
 
     env_key = "Ant-v4"

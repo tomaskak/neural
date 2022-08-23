@@ -38,6 +38,11 @@ class Layer(nn.Module):
             (A @ x.T + b).T = y.T
             x @ A.T + b.T = y.T
         """
+        # if self.bias is not None:
+        #     return nn.functional.layer_norm(X.T, (X.shape[0],)).T @ self.weights.T + self.bias
+        # else:
+        #     return nn.functional.layer_norm(X.T, (X.shape[0],)).T @ self.weights.T
+
         if self.bias is not None:
             return X @ self.weights.T + self.bias
         else:
