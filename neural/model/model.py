@@ -49,6 +49,7 @@ class Model(torch.nn.Module):
 class NormalModel(Model):
     def __init__(self, name, layers, sink=None):
         super().__init__(name, layers, sink)
+        self._tanh = torch.nn.Tanh()
 
     def forward(self, X):
         output = super().forward(X)
@@ -94,4 +95,4 @@ class NormalModel(Model):
 
             actions.append(action.reshape(-1, 1))
 
-        return torch.cat(actions, dim=-1), log_prob
+        return self._tanh(torch.cat(actions, dim=-1)), log_prob

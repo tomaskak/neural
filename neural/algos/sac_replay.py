@@ -1,89 +1,88 @@
-from ..util.exp_replay import ExpReplay
-
+from ..util.exp_replay import ExpReplayShared, SharedBuffers
+from ..tools.timer import timer, init_timer_manager, PrintManager
 import torch
 import numpy as np
-from queue import Queue
+from queue import Queue, Empty
+from threading import Event
 
 
-def sac_replay(
-    new_data_q: Queue,
-    push_batch_q: Queue,
-    hypers: dict,
-    in_size: int,
-    out_size: int,
-    push_q_length: int,
-    device: str,
-):
-    replay_buf = _init_replay_buffer(
-        hypers["experience_replay_size"], in_size, out_size
-    )
-    next_id = 0
-    live_samples = {}
-    empty_batch_bufs = []
+def sac_replay_store(exp_q: Queue, buffers: SharedBuffers):
+    init_timer_manager(PrintManager(100000))
+    exp_replay = ExpReplayShared(buffers)
 
-    for item in iter(new_data_q.get, "STOP"):
+    for item in iter(exp_q.get, "STOP"):
         cmd, args = item
         if cmd == "EXP":
-            new_data = args
-            replay_buf.push(new_data)
+            with timer("push-to-replay"):
+                exp_replay.push(args)
+        else:
+            print(f"Bad command passed to sac_replay_store: {cmd}, {args}")
 
-            if (
-                len(replay_buf) >= hypers["minibatch_size"] * 2
-                and push_batch_q.qsize() < push_q_length
-            ):
-                sample = replay_buf.sample(hypers["minibatch_size"])
 
-                new_sample = []
-                if not empty_batch_bufs:
-                    for i, part in enumerate(sample):
-                        # rewards at index 2, and dones at index 4, need to be reshaped . TODO: update buffer to output right shape
-                        if i == 2 or i == 4:
-                            new_sample.append(
-                                torch.tensor(
-                                    part.astype(np.float32),
-                                    device=device,
-                                    dtype=torch.float32,
-                                    requires_grad=False,
-                                ).reshape(-1, 1)
-                            )
+def sac_replay_sample(
+    batch_q: Queue,
+    returns_q: Queue,
+    start: Event,
+    stop: Event,
+    hypers: dict,
+    buffers: SharedBuffers,
+    device: str,
+):
+    init_timer_manager(PrintManager(20000))
+    exp_replay = ExpReplayShared(buffers)
+    live_batches = {}
+    free_tensors = []
+
+    start.wait()
+
+    batch_id = 0
+    while not stop.is_set():
+        with timer("sample-loop"):
+            sample = exp_replay.sample(hypers["minibatch_size"])
+            batch = make_as_tensor(sample, free_tensors, device)
+            with timer("pushing-sample-to-q"):
+                batch_q.put(("PROCESS", (batch_id, batch)))
+            live_batches[batch_id] = batch
+            batch_id += 1
+
+            if returns_q.qsize() > 0:
+                with timer("reclaiming-return"):
+                    try:
+                        cmd, return_id = returns_q.get_nowait()
+                        if cmd == "DONE":
+                            free_tensors.append(live_batches[return_id])
+                            del live_batches[return_id]
                         else:
-                            new_sample.append(
-                                torch.tensor(
-                                    part.astype(np.float32),
-                                    device=device,
-                                    dtype=torch.float32,
-                                    requires_grad=False,
-                                )
+                            print(
+                                f"Unexpected command in returns queue: {cmd}, {return_id}"
                             )
-                    new_sample.append(torch.cat((new_sample[0], new_sample[1]), dim=1))
-                else:
-                    new_sample = empty_batch_bufs.pop()
-                    for i, part in enumerate(sample):
-                        if i == 2 or i == 4:
-                            new_sample[i].copy_(
-                                torch.from_numpy(part.astype(np.float32)).reshape(-1, 1)
-                            )
-                        else:
-                            new_sample[i].copy_(
-                                torch.from_numpy(part.astype(np.float32))
-                            )
-                    new_sample[-1].copy_(
-                        torch.cat((new_sample[0], new_sample[1]), dim=1)
-                    )
-
-                push_batch_q.put(("PROCESS", (next_id, new_sample)))
-                if next_id not in live_samples:
-                    live_samples[next_id] = new_sample
-                    next_id += 1
-
-        elif cmd == "DONE":
-            # Reuse the tensors that are done so the shmem doesn't need to be recreated.
-            batch_id = args
-            empty_batch_bufs.append(live_samples[batch_id])
-            del live_samples[batch_id]
+                    except Empty as e:
+                        pass
 
 
-def _init_replay_buffer(replay_size: int, in_size: int, out_size: int):
-    state_spec = ("f8", (in_size,))
-    action_spec = ("f8", (out_size,))
-    return ExpReplay(replay_size, [state_spec, action_spec, float, state_spec, float])
+def to_new_tensor(arr: np.ndarray, device: str):
+    return torch.tensor(arr, dtype=torch.float32, device=device, requires_grad=False)
+
+
+def to_tensor(arr: np.ndarray, old_tensor: torch.Tensor):
+    old_tensor[:] = torch.from_numpy(arr)[:]
+    return old_tensor
+
+
+def make_state_actions(initial_tensors: list):
+    return torch.cat((initial_tensors[0], initial_tensors[1]), dim=1)
+
+
+def make_as_tensor(sample: list, free_tensors: list, device: str):
+    if free_tensors:
+        out = []
+        to_replace = free_tensors.pop()
+        for tensor, arr in zip(to_replace, sample):
+            out.append(to_tensor(arr, tensor))
+        out.append(to_replace[-1].copy_(make_state_actions(out)))
+        return out
+
+    else:
+        out = [to_new_tensor(s, device) for s in sample]
+        out.append(make_state_actions(out))
+        return out

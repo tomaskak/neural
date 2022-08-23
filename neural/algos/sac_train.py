@@ -26,32 +26,40 @@ def sac_train(
     On completing steps_to_report number of training steps a dict with info of training progress
     will be pushed into the report_queue.
     """
-    init_timer_manager(PrintManager(5 * 1000))
+    init_timer_manager(PrintManager(10000))
     items_processed = 0
-    for item in iter(next_batch_q.get, "STOP"):
-        if type(item) == tuple:
-            cmd, args = item
-            if cmd == "PROCESS":
-                batch_id, batch = args
-                items_processed += 1
-                if items_processed % steps_to_report == 0:
-                    try:
-                        report_queue.put_nowait({"completed": items_processed})
-                    except Exception as e:
-                        print(f"exception putting results: {e}")
-                    # This updates the state of all models in the 'shared' structure.
-                    context.update_shared()
+    while True:
+        with timer("training-loop"):
+            with timer("time waiting for queue"):
+                item = next_batch_q.get()
+            if item == "STOP":
+                break
 
-                process_batch(context, hypers, batch)
+            if type(item) == tuple:
+                cmd, args = item
+                if cmd == "PROCESS":
+                    batch_id, batch = args
+                    items_processed += 1
+                    if items_processed % steps_to_report == 0:
+                        try:
+                            report_queue.put_nowait({"completed": items_processed})
+                        except Exception as e:
+                            print(f"exception putting results: {e}")
+                        # This updates the state of all models in the 'shared' structure.
+                        context.update_shared()
 
-                done_queue.put(("DONE", batch_id))
-                for item in batch:
-                    del item
-                del batch
+                    process_batch(context, hypers, batch)
+
+                    done_queue.put(("DONE", batch_id))
+                    for item in batch:
+                        del item
+                    del batch
+                else:
+                    print(
+                        f"Received unknown command in sac_train: cmd={cmd}, args={args}"
+                    )
             else:
-                print(f"Received unknown command in sac_train: cmd={cmd}, args={args}")
-        else:
-            print(f"Received unknown command of type {type(item)} and value={item}")
+                print(f"Received unknown command of type {type(item)} and value={item}")
 
 
 def process_batch(context: SACContext, hypers: dict, batch: tuple):
@@ -70,7 +78,8 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         target_next_state_values = context.target_value.forward(next_states)
 
         rng = hypers["max_action"]
-        new_actions = torch.clamp(new_actions * rng, min=-rng, max=rng)
+
+        new_actions = new_actions * rng
 
         new_state_actions = torch.cat((states, new_actions), 1)
 

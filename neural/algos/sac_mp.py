@@ -4,12 +4,13 @@ from ..model.layer import Layer
 from ..model.layer_factory import to_layers, env_to_in_out_sizes
 from ..tools.timer import timer
 from ..algos.sac_context import SACContext
+from ..util.exp_replay import SharedBuffers
 
 from ..algos.sac_train import sac_train
-from ..algos.sac_replay import sac_replay
+from ..algos.sac_replay import sac_replay_sample, sac_replay_store
 
 from copy import deepcopy
-from torch.multiprocessing import Queue, Process
+from torch.multiprocessing import Queue, Process, Event
 from queue import Empty
 import torch
 import numpy as np
@@ -187,23 +188,38 @@ class SoftActorCritic(Algo):
         pass
 
     def start(self, render=False, save_hook=None, result_hook=None):
-        replay_buf_q = Queue(maxsize=20)
-        next_batch_q = Queue()
+        replay_buf_q = Queue(maxsize=10000)
+        next_batch_q = Queue(maxsize=200)
+        dones_q = Queue()
         report_queue = Queue()
+        start_sampling = Event()
+        stop_sampling = Event()
 
-        replay_process = Process(
-            name="replay",
-            target=sac_replay,
+        buffers = SharedBuffers(
+            self._hypers["experience_replay_size"],
+            50,
+            "f",
+            [self._in_size, self._out_size, 1, self._in_size, 1],
+        )
+
+        replay_store_process = Process(
+            name="replay_store", target=sac_replay_store, args=(replay_buf_q, buffers)
+        )
+
+        replay_sample_process = Process(
+            name="replay_sample",
+            target=sac_replay_sample,
             args=(
-                replay_buf_q,
                 next_batch_q,
+                dones_q,
+                start_sampling,
+                stop_sampling,
                 self._hypers,
-                self._in_size,
-                self._out_size,
-                10,
+                buffers,
                 self._device,
             ),
         )
+
         train_process = Process(
             name="trainer",
             target=sac_train,
@@ -213,11 +229,12 @@ class SoftActorCritic(Algo):
                 self._hypers,
                 200,
                 report_queue,
-                replay_buf_q,
+                dones_q,
             ),
         )
 
-        replay_process.start()
+        replay_store_process.start()
+        replay_sample_process.start()
         train_process.start()
 
         EPISODES = self._training_params.get("episodes_per_training", 10)
@@ -227,7 +244,9 @@ class SoftActorCritic(Algo):
         SAVE_TIME = self._training_params.get("save_on_iteration", 100)
 
         iteration = 0
+        time_limit_truncation = 0
         last_report = {"completed": 0}
+        total_buf_writes = 0
         while True:
             with timer("explore-iteration"):
                 for episode in range(EPISODES):
@@ -242,29 +261,41 @@ class SoftActorCritic(Algo):
                                     ).float()
                                 )
                             rng = self._hypers["max_action"]
-                            actions = torch.clamp(actions * rng, min=-rng, max=rng)
+                            actions = actions * rng
 
                             next_observation, reward, done, info = self._env.step(
                                 actions[0].numpy()
                             )
+
+                            # Done value can be set if time limit is reached on an environment causing
+                            # the model to think this is a valid termination case even though the timing
+                            # is arbitrary and not a part of the MDP.
+                            done_value = 0.0 if done else 1.0
+                            if done and info["TimeLimit.truncated"]:
+                                time_limit_truncation += 1
+                                done_value = 1.0
 
                             replay_buf_q.put(
                                 (
                                     "EXP",
                                     [
                                         observation,
-                                        actions,
+                                        actions[0].numpy(),
                                         reward,
                                         next_observation,
                                         0.0 if done else 1.0,
                                     ],
                                 )
                             )
+                            total_buf_writes += 1
 
                             observation = next_observation
 
                             if done or step == STEPS - 1:
                                 break
+                    if not start_sampling.is_set() and total_buf_writes > 2000:
+                        print(f"start sampling!")
+                        start_sampling.set()
 
             done = False
             try:
@@ -281,7 +312,7 @@ class SoftActorCritic(Algo):
             with timer("test"):
                 test_result = self.test(render)
                 print(
-                    f"training-iterations={last_report['completed']} results={test_result}"
+                    f"training-iterations={last_report['completed']} results={test_result}, time_limit_reached={time_limit_truncation}"
                 )
                 if result_hook is not None:
                     result_hook(test_result)
@@ -291,8 +322,10 @@ class SoftActorCritic(Algo):
 
         replay_buf_q.put("STOP")
         next_batch_q.put("STOP")
+        stop_sampling.set()
 
-        replay_process.join()
+        replay_sample_process.join()
+        replay_store_process.join()
         train_process.join()
 
     def test(self, render=False) -> dict:
@@ -302,6 +335,7 @@ class SoftActorCritic(Algo):
         EPISODES = self._training_params.get("episodes_per_test", 10)
 
         total_reward = 0
+        total_steps = 0
         for i in range(EPISODES):
             observation = self._env.reset()
             current_total_reward = 0
@@ -321,6 +355,7 @@ class SoftActorCritic(Algo):
                         self._env.render()
 
                     if done or step == STEPS - 1:
+                        total_steps += step
                         total_reward += current_total_reward
                         if (
                             result["max"] is None
@@ -334,6 +369,8 @@ class SoftActorCritic(Algo):
                             result["min"] = current_total_reward
                         break
                     observation = next_observation
-        result["average"] = total_reward / EPISODES
+        result["average"] = round(total_reward / EPISODES, 2)
+        result["average_per_step"] = round(total_reward / total_steps, 2)
+        result["average_steps_per_episode"] = round(total_steps / EPISODES, 2)
 
         return result
