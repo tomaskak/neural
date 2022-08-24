@@ -343,7 +343,8 @@ class SoftActorCritic(Algo):
                 action = None
                 with torch.no_grad():
                     actions, log_probs = self.context.shared.actor.forward(
-                        torch.tensor(np.array([observation]), device="cpu").float()
+                        torch.tensor(np.array([observation]), device="cpu").float(),
+                        deterministic=True
                     )
 
                     next_observation, reward, done, info = self._env.step(
@@ -351,8 +352,10 @@ class SoftActorCritic(Algo):
                     )
                     current_total_reward += reward
 
-                    if render and i == EPISODES - 1:
+                    if render:
                         self._env.render()
+
+                    # print(f"reward={reward}, info={info}")
 
                     if done or step == STEPS - 1:
                         total_steps += step

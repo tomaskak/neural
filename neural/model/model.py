@@ -51,11 +51,11 @@ class NormalModel(Model):
         super().__init__(name, layers, sink)
         self._tanh = torch.nn.Tanh()
 
-    def forward(self, X):
+    def forward(self, X, deterministic=False):
         output = super().forward(X)
-        return self._get_actions(output)
+        return self._get_actions(output, deterministic)
 
-    def _get_actions(self, norm_params):
+    def _get_actions(self, norm_params, deterministic):
         """
         Get the action values from the norm_params passed in.
 
@@ -84,7 +84,10 @@ class NormalModel(Model):
             z = std_normal.sample(sample_shape=mu.shape)
             sigma = torch.exp(log_sigma)
 
-            action = mu + sigma * z
+            if deterministic:
+                action = mu
+            else:
+                action = mu + sigma * z
 
             if log_prob is None:
                 log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)

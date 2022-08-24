@@ -95,11 +95,10 @@ if __name__ == "__main__":
         for i in range(training_params["training_iterations"]):
             with timer(f"test"):
                 test_results = sac.test(render=args.render)
-                with open(log_file, "a") as f:
-                    f.write(json.dumps({f"{i}": test_results}, indent=4))
+                print(f"iteration-{i} results={test_results}")
     else:
         sac.start(render=args.render, save_hook=save, result_hook=result)
-        print(f"iteration-{i} results={test_results}")
+
 
     if not args.test_only:
         torch.save(sac.save(), f"./sac-{env_key}-{int(time.time())}.ai")
