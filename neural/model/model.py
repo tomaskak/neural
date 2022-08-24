@@ -95,7 +95,13 @@ class NormalModel(Model):
                 log_prob += torch.distributions.normal.Normal(mu, sigma).log_prob(
                     action
                 )
-
             actions.append(action.reshape(-1, 1))
+        actions = torch.cat(actions, dim=-1)
+        tanh_correction = -2 * (
+            torch.log(torch.tensor(2.0))
+            - actions
+            - torch.nn.functional.softplus(-2 * actions)
+        ).sum(dim=-1)
+        log_prob += tanh_correction
 
-        return self._tanh(torch.cat(actions, dim=-1)), log_prob
+        return self._tanh(actions), log_prob

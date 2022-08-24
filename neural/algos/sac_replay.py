@@ -46,19 +46,18 @@ def sac_replay_sample(
             live_batches[batch_id] = batch
             batch_id += 1
 
-            if returns_q.qsize() > 0:
-                with timer("reclaiming-return"):
-                    try:
-                        cmd, return_id = returns_q.get_nowait()
-                        if cmd == "DONE":
-                            free_tensors.append(live_batches[return_id])
-                            del live_batches[return_id]
-                        else:
-                            print(
-                                f"Unexpected command in returns queue: {cmd}, {return_id}"
-                            )
-                    except Empty as e:
-                        pass
+            with timer("reclaiming-return"):
+                try:
+                    cmd, return_id = returns_q.get_nowait()
+                    if cmd == "DONE":
+                        free_tensors.append(live_batches[return_id])
+                        del live_batches[return_id]
+                    else:
+                        print(
+                            f"Unexpected command in returns queue: {cmd}, {return_id}"
+                        )
+                except Empty as e:
+                    pass
 
 
 def to_new_tensor(arr: np.ndarray, device: str):

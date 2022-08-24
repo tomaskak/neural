@@ -14,6 +14,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", "-f", dest="file")
+    parser.add_argument(
+        "--path", "-p", dest="path", type=str, default="/vol/run_artifacts"
+    )
     parser.add_argument("--iterations", "-i", dest="iterations", type=int)
     parser.add_argument(
         "--test-only", dest="test_only", action="store_true", default=False
@@ -27,9 +30,9 @@ if __name__ == "__main__":
 
     hypers = {
         "future_reward_discount": 0.995,
-        "q_lr": 0.0001,
-        "v_lr": 0.0001,
-        "actor_lr": 0.001,
+        "q_lr": 0.0003,
+        "v_lr": 0.0003,
+        "actor_lr": 0.0003,
         "max_action": 1.0,
         "target_update_step": 0.001,
         "experience_replay_size": 1000 * 1000,
@@ -38,8 +41,7 @@ if __name__ == "__main__":
     layers = {
         "actor": [
             ("l1", "tanh", "input", "input*4"),
-            ("l2", "tanh", "input*4", "input*4"),
-            ("l3", "tanh", "input*4", "output*2"),
+            ("l2", "tanh", "input*4", "output*2"),
         ],
         "q_1": [
             ("l1", "tanh", "input + output", "input*6+output*6"),
@@ -67,18 +69,16 @@ if __name__ == "__main__":
         "save_on_iteration": 5,
     }
 
-    env_key = "Ant-v4"
+    # env_key = "Ant-v4"
     # env_key = "InvertedPendulum-v4"
-    # env_key = "InvertedDoublePendulum-v4"
+    env_key = "InvertedDoublePendulum-v4"
     env = gym.make(env_key)
     sac = SoftActorCritic(hypers, layers, training_params, env)
 
-    log_file = f"/vol/run_artifacts/sac-{env_key}-{int(time.time())}.result"
+    log_file = args.path + f"/sac-{env_key}-{int(time.time())}.result"
 
     def save(data):
-        torch.save(
-            sac.save(), f"/vol/run_artifacts/sac-{env_key}-{int(time.time())}.ai"
-        )
+        torch.save(sac.save(), args.path + f"/sac-{env_key}-{int(time.time())}.ai")
 
     count = 0
 
@@ -99,8 +99,7 @@ if __name__ == "__main__":
     else:
         sac.start(render=args.render, save_hook=save, result_hook=result)
 
-
     if not args.test_only:
-        torch.save(sac.save(), f"./sac-{env_key}-{int(time.time())}.ai")
+        torch.save(sac.save(), args.path + f"/sac-{env_key}-{int(time.time())}.ai")
 
     print("DONE!")

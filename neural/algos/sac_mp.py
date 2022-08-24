@@ -36,6 +36,7 @@ class SoftActorCritic(Algo):
         "experience_replay_size": int,
         "minibatch_size": int,
         "max_action": float,
+        "target_entropy_weight": float,
     }
 
     # The algorithm has a model not listed here for 'target_value' but this by
@@ -90,6 +91,13 @@ class SoftActorCritic(Algo):
         self.context.target_value = deepcopy(self.context.value)
         self.context.target_value.requires_grad_(False)
 
+        self.context.entropy_weight = torch.tensor(
+            [0.0], dtype=torch.float32, requires_grad=True
+        )
+
+        hypers["target_entropy_weight"] = hypers.get(
+            "target_entropy_weight", -self._in_size
+        )
         self._gamma = hypers.get("future_reward_discount", 0.99)
         self._q_lr = hypers.get("q_lr", 0.001)
         self._v_lr = hypers.get("v_lr", 0.001)
@@ -110,6 +118,9 @@ class SoftActorCritic(Algo):
         self.context.value_optim = torch.optim.Adam(
             self.context.value.parameters(), self._v_lr
         )
+        self.context.entropy_weight_optim = torch.optim.Adam(
+            [self.context.entropy_weight], self._actor_lr
+        )
 
         self.context.q_1_loss_fn = torch.nn.MSELoss()
         self.context.q_2_loss_fn = torch.nn.MSELoss()
@@ -125,12 +136,14 @@ class SoftActorCritic(Algo):
         self.context.shared.q_2.to("cpu").share_memory()
         self.context.shared.value.to("cpu").share_memory()
         self.context.shared.target_value.to("cpu").share_memory()
+        self.context.shared.entropy_weight.to("cpu").share_memory_()
 
         self.context.actor.to(self._device)
         self.context.q_1.to(self._device)
         self.context.q_2.to(self._device)
         self.context.value.to(self._device)
         self.context.target_value.to(self._device)
+        self.context.entropy_weight.to(self._device)
 
     def load(self, settings):
         self.context.actor.load_state_dict(settings["actor"])
@@ -148,6 +161,9 @@ class SoftActorCritic(Algo):
 
         hypers = settings["hyperparameters"]
         hypers["max_action"] = hypers.get("max_action", 1.0)
+        hypers["target_entropy_weight"] = hypers.get(
+            "target_entropy_weight", -self._in_size
+        )
         self._hypers = hypers
         self._gamma = hypers["future_reward_discount"]
         self._q_lr = hypers["q_lr"]
@@ -177,6 +193,7 @@ class SoftActorCritic(Algo):
                 "experience_replay_size": self._replay_size,
                 "minibatch_size": self._mini_batch_size,
                 "max_action": self._hypers["max_action"],
+                "target_entropy_weight": self._hypers["target_entropy_weight"],
             },
         }
 
@@ -261,17 +278,21 @@ class SoftActorCritic(Algo):
                                     ).float()
                                 )
                             rng = self._hypers["max_action"]
-                            actions = actions * rng
 
                             next_observation, reward, done, info = self._env.step(
-                                actions[0].numpy()
+                                actions[0].numpy() * rng
                             )
 
                             # Done value can be set if time limit is reached on an environment causing
                             # the model to think this is a valid termination case even though the timing
                             # is arbitrary and not a part of the MDP.
                             done_value = 0.0 if done else 1.0
-                            if done and info is not None and info["TimeLimit.truncated"]:
+                            if (
+                                done
+                                and info is not None
+                                and "TimeLimit.truncated" in info
+                                and info["TimeLimit.truncated"]
+                            ):
                                 time_limit_truncation += 1
                                 done_value = 1.0
 
@@ -314,6 +335,9 @@ class SoftActorCritic(Algo):
                 print(
                     f"training-iterations={last_report['completed']} results={test_result}, time_limit_reached={time_limit_truncation}"
                 )
+                print(
+                    f"entropy_weight={self.context.shared.entropy_weight}, target={self._hypers['target_entropy_weight']}"
+                )
                 if result_hook is not None:
                     result_hook(test_result)
             iteration += 1
@@ -344,7 +368,7 @@ class SoftActorCritic(Algo):
                 with torch.no_grad():
                     actions, log_probs = self.context.shared.actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float(),
-                        deterministic=True
+                        deterministic=False,
                     )
 
                     next_observation, reward, done, info = self._env.step(

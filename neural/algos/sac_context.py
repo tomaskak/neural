@@ -9,11 +9,13 @@ class SACCore:
         self._q_2 = None
         self._value = None
         self._target_value = None
+        self._entropy_weight = None
 
         self._actor_optim = None
         self._q_1_optim = None
         self._q_2_optim = None
         self._value_optim = None
+        self._entropy_weight_optim = None
 
     @property
     def actor(self):
@@ -56,6 +58,14 @@ class SACCore:
         self._target_value = new_target_value
 
     @property
+    def entropy_weight(self):
+        return self._entropy_weight
+
+    @entropy_weight.setter
+    def entropy_weight(self, new_entropy_weight):
+        self._entropy_weight = new_entropy_weight
+
+    @property
     def actor_optim(self):
         return self._actor_optim
 
@@ -86,6 +96,14 @@ class SACCore:
     @value_optim.setter
     def value_optim(self, new_value_optim):
         self._value_optim = new_value_optim
+
+    @property
+    def entropy_weight_optim(self):
+        return self._entropy_weight_optim
+
+    @entropy_weight_optim.setter
+    def entropy_weight_optim(self, new_entropy_weight_optim):
+        self._entropy_weight_optim = new_entropy_weight_optim
 
 
 class SACShared(SACCore):
@@ -128,6 +146,14 @@ class SACShared(SACCore):
     def target_value(self, new_target_value):
         self._assign_or_copy("_target_value", new_target_value)
 
+    @SACCore.entropy_weight.setter
+    def entropy_weight(self, new_entropy_weight):
+        with torch.no_grad():
+            if self._entropy_weight is None:
+                self._entropy_weight = new_entropy_weight
+            else:
+                self._entropy_weight.copy_(new_entropy_weight)
+
     @SACCore.actor_optim.setter
     def actor_optim(self, new_actor_optim):
         self._assign_or_copy_optim("_actor_optim", new_actor_optim)
@@ -143,6 +169,10 @@ class SACShared(SACCore):
     @SACCore.value_optim.setter
     def value_optim(self, new_value_optim):
         self._assign_or_copy_optim("_value_optim", new_value_optim)
+
+    @SACCore.entropy_weight_optim.setter
+    def entropy_weight_optim(self, new_entropy_weight_optim):
+        self._assign_or_copy_optim("_entropy_weight_optim", new_entropy_weight_optim)
 
 
 class SACContext(SACCore):
@@ -209,8 +239,10 @@ class SACContext(SACCore):
         self.shared.q_2 = self.q_2
         self.shared.value = self.value
         self.shared.target_value = self.target_value
+        self.shared.entropy_weight = self.entropy_weight
 
         self.shared.actor_optim = self.actor_optim
         self.shared.q_1_optim = self.q_1_optim
         self.shared.q_2_optim = self.q_2_optim
         self.shared.value_optim = self.value_optim
+        self.shared.entropy_weight_optim = self.entropy_weight_optim

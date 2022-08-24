@@ -28,6 +28,7 @@ def sac_train(
     """
     init_timer_manager(PrintManager(10000))
     items_processed = 0
+
     while True:
         with timer("training-loop"):
             with timer("time waiting for queue"):
@@ -70,6 +71,7 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         context.q_2.zero_grad()
         context.actor.zero_grad()
         context.value.zero_grad()
+        context.entropy_weight.grad = None
 
         predicted_values = context.value.forward(states)
         new_actions, log_probs = context.actor.forward(states)
@@ -77,11 +79,15 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         predicted_q_2s = context.q_2.forward(state_actions)
         target_next_state_values = context.target_value.forward(next_states)
 
-        rng = hypers["max_action"]
-
-        new_actions = new_actions * rng
-
         new_state_actions = torch.cat((states, new_actions), 1)
+
+        # Entropy weight update
+        entropy_loss = -(
+            context.entropy_weight.exp()
+            * (log_probs + hypers["target_entropy_weight"]).detach()
+        ).mean()
+        e_weight = context.entropy_weight.exp().detach()
+        entropy_loss.backward()
 
         predicted_new_qs = torch.minimum(
             context.q_1.forward(new_state_actions),
@@ -102,19 +108,24 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         q_2_loss.backward()
 
         # Value update
-        target_vs = predicted_new_qs.detach() - log_probs.detach().reshape(-1, 1)
+        target_vs = predicted_new_qs.detach() - e_weight * log_probs.detach().reshape(
+            -1, 1
+        )
         v_loss = context.value_loss_fn(predicted_values, target_vs.float())
 
         v_loss.backward()
 
         # Policy update
-        loss = context.actor_loss_fn(log_probs.reshape(-1, 1), predicted_new_qs)
+        loss = context.actor_loss_fn(
+            e_weight * log_probs.reshape(-1, 1), predicted_new_qs
+        )
         loss.backward()
 
         context.actor_optim.step()
         context.q_1_optim.step()
         context.q_2_optim.step()
         context.value_optim.step()
+        context.entropy_weight_optim.step()
         with torch.no_grad():
             for target, update in zip(
                 context.target_value.parameters(), context.value.parameters()
