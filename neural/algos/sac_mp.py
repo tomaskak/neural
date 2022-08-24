@@ -271,7 +271,7 @@ class SoftActorCritic(Algo):
                             # the model to think this is a valid termination case even though the timing
                             # is arbitrary and not a part of the MDP.
                             done_value = 0.0 if done else 1.0
-                            if done and info["TimeLimit.truncated"]:
+                            if done and info is not None and info["TimeLimit.truncated"]:
                                 time_limit_truncation += 1
                                 done_value = 1.0
 
