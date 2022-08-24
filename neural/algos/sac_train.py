@@ -12,6 +12,7 @@ def sac_train(
     steps_to_report: int,
     report_queue: Queue,
     done_queue: Queue,
+    device: str = "cpu",
 ):
     """
     Defines the training loop for the SAC algorithm.
@@ -28,6 +29,8 @@ def sac_train(
     """
     init_timer_manager(PrintManager(10000))
     items_processed = 0
+
+    context.to(device)
 
     while True:
         with timer("training-loop"):

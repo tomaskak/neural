@@ -246,3 +246,11 @@ class SACContext(SACCore):
         self.shared.q_2_optim = self.q_2_optim
         self.shared.value_optim = self.value_optim
         self.shared.entropy_weight_optim = self.entropy_weight_optim
+
+    def to(self, device: str):
+        self.actor.to(device)
+        self.q_1.to(device)
+        self.q_2.to(device)
+        self.value.to(device)
+        self.target_value.to(device)
+        self.entropy_weight = self.entropy_weight.to(device)

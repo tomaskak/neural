@@ -21,11 +21,13 @@ def make_a_context():
     context.q_2 = deepcopy(context.actor)
     context.value = deepcopy(context.actor)
     context.target_value = deepcopy(context.actor)
+    context.entropy_weight = torch.tensor(5.0)
 
     context.q_1_optim = deepcopy(context.actor_optim)
     context.q_2_optim = deepcopy(context.actor_optim)
     context.value_optim = deepcopy(context.actor_optim)
     context.target_value_optim = deepcopy(context.actor_optim)
+    context.entropy_weight_optim = deepcopy(context.actor_optim)
 
     context.q_1_loss_fn = deepcopy(context.actor_loss_fn)
     context.q_2_loss_fn = deepcopy(context.actor_loss_fn)

@@ -138,13 +138,6 @@ class SoftActorCritic(Algo):
         self.context.shared.target_value.to("cpu").share_memory()
         self.context.shared.entropy_weight.to("cpu").share_memory_()
 
-        self.context.actor.to(self._device)
-        self.context.q_1.to(self._device)
-        self.context.q_2.to(self._device)
-        self.context.value.to(self._device)
-        self.context.target_value.to(self._device)
-        self.context.entropy_weight.to(self._device)
-
     def load(self, settings):
         self.context.actor.load_state_dict(settings["actor"])
         self.context.q_1.load_state_dict(settings["q_1"])
