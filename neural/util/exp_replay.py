@@ -66,7 +66,7 @@ class SharedBuffers:
         self._buffers = [
             (
                 Value("Q", lock=True),
-                Value("Q", lock=True),
+                Value("Q", -1.0, lock=True),
                 Array(dtype, self._part_size * self._elem_size, lock=True),
             )
             for _ in range(partitions)
