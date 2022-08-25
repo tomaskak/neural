@@ -227,6 +227,7 @@ class SoftActorCritic(Algo):
                 200,
                 report_queue,
                 dones_q,
+                self._device,
             ),
         )
 
