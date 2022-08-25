@@ -189,7 +189,6 @@ class SharedBuffers(Buffers):
         ]
 
     def __getitem__(self, index: int):
-        assert isinstance(index, int), "Only single getitem supported in SharedBuffers"
         return self._buffers[index]
 
 
@@ -237,7 +236,7 @@ class ExpReplayReader(ExpReplayCore):
                 attempts += 1
                 buf = self._random_part()
                 with self._buffers[buf] as buffer:
-                    if buffer.max_elem > sample_size:
+                    if buffer.max_elem > sample_size // 4:
                         done = True
             if not done:
                 raise RuntimeError(
@@ -251,9 +250,6 @@ class ExpReplayReader(ExpReplayCore):
                 size=(sample_size,),
             )
             indexes = indexes if sample_size > 1 else [indexes]
-            print(
-                f"indexes={indexes}, sample_size={sample_size}, lenbuf={len(buffer)}, max_elem={buffer.max_elem}"
-            )
 
             for count, i in enumerate(indexes):
                 offset = i * self._buffers.item_size

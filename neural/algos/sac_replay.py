@@ -39,7 +39,11 @@ def sac_replay_sample(
     while not stop.is_set():
         with timer("sample-loop"):
             with timer("sample"):
-                sample = exp_replay.sample(hypers["minibatch_size"])
+                try:
+                    sample = exp_replay.sample(hypers["minibatch_size"])
+                except RuntimeError as e:
+                    print(f"Encountered exception {e} when sampling. Retrying.")
+                    continue
             batch = make_as_tensor(sample, free_tensors, device)
             with timer("pushing-sample-to-q"):
                 batch_q.put(("PROCESS", (batch_id, batch)))
