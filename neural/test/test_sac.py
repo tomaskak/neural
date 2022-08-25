@@ -23,10 +23,6 @@ def init_sac(hypers=list()):
             ("l1", "tanh", "input + output", "input*4"),
             ("l2", "ReLU", "input*4", 1),
         ],
-        "value": [
-            ("l1", "tanh", "input + output", "input"),
-            ("l2", "ReLU", "input*4", 1),
-        ],
     }
     return SoftActorCritic(hypers, layers, {}, env())
 

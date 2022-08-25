@@ -134,14 +134,29 @@ class ExpReplayShared:
 
     def sample(self, sample_size):
         assert sample_size > 0
-        idx, max_elem, buf = self._shared.buffers[self._random_part()]
-        while max_elem.value < sample_size:
+
+        # Selected buffer must have enough elements for the sample size
+        done = False
+        attempts = 0
+        while not done and attempts < self._shared.partitions * 2:
+            attempts += 1
             idx, max_elem, buf = self._shared.buffers[self._random_part()]
+            with max_elem.get_lock():
+                if max_elem.value > sample_size:
+                    done = True
+
+        if not done:
+            raise RuntimeError(
+                f"{attempts} attempts made to get a buffer of adequate size for a sample of {sample_size} with no successful candidates."
+            )
+
         sample = self._zeros(sample_size)
 
         with max_elem.get_lock():
             indexes = self._generator.integers(
-                0, min(max_elem.value - 1, len(buf) - 1), size=(sample_size,)
+                0,
+                min(max_elem.value, (len(buf) / self._shared.item_size)),
+                size=(sample_size,),
             )
 
         for count, i in enumerate(indexes):

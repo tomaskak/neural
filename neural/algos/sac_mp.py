@@ -58,7 +58,7 @@ class SoftActorCritic(Algo):
 
         assert len(SoftActorCritic.required_model_defs) == len(
             layers
-        ), f"Unexpected model defined, expected={required_model_defs}"
+        ), f"Unexpected model defined, expected={SoftActorCritic.required_model_defs}"
 
         in_size, out_size = env_to_in_out_sizes(env)
         self._in_size = in_size
