@@ -39,9 +39,7 @@ class SoftActorCritic(Algo):
         "target_entropy_weight": float,
     }
 
-    # The algorithm has a model not listed here for 'target_value' but this by
-    # definition must be the same configuration as 'value'.
-    required_model_defs = ["actor", "q_1", "q_2", "value"]
+    required_model_defs = ["actor", "q_1", "q_2"]
 
     def __init__(self, hypers: dict, layers: list, training_params: dict, env):
         """
