@@ -1,5 +1,5 @@
 from neural.algos.sac_replay import sac_replay_store, sac_replay_sample
-from neural.util.exp_replay import ExpReplayShared, SharedBuffers
+from neural.util.exp_replay import ExpReplayWriter, SharedBuffers
 from unittest import TestCase
 from unittest.mock import Mock, patch, call, ANY
 from torch.multiprocessing import Queue
@@ -48,8 +48,8 @@ class TestSACReplayStore(TestCase):
         self._exp_q.put("STOP")
 
         sac_replay_store(self._exp_q, shared)
-        _, _, buf = shared.buffers[BUF_ID]
-        assert np.concatenate(self._data).tolist() == buf[0 : shared.item_size]
+        with shared[BUF_ID] as buf:
+            assert np.concatenate(self._data).tolist() == buf[0 : shared.item_size]
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ class TestSACReplaySample(TestCase):
             100, 10, dtype="f", elem_parts=[IN_SIZE, OUT_SIZE, 1, IN_SIZE, 1]
         )
 
-        self._replay = ExpReplayShared(self._shared)
+        self._replay = ExpReplayWriter(self._shared)
         for _ in range(10):
             self._replay.push(self._data)
 

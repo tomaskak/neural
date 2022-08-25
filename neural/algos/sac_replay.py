@@ -1,4 +1,4 @@
-from ..util.exp_replay import ExpReplayShared, SharedBuffers
+from ..util.exp_replay import ExpReplayReader, ExpReplayWriter, SharedBuffers
 from ..tools.timer import timer, init_timer_manager, PrintManager
 import torch
 import numpy as np
@@ -8,7 +8,7 @@ from threading import Event
 
 def sac_replay_store(exp_q: Queue, buffers: SharedBuffers):
     init_timer_manager(PrintManager(100000))
-    exp_replay = ExpReplayShared(buffers)
+    exp_replay = ExpReplayWriter(buffers)
 
     for item in iter(exp_q.get, "STOP"):
         cmd, args = item
@@ -29,7 +29,7 @@ def sac_replay_sample(
     device: str,
 ):
     init_timer_manager(PrintManager(20000))
-    exp_replay = ExpReplayShared(buffers)
+    exp_replay = ExpReplayReader(buffers)
     live_batches = {}
     free_tensors = []
 
