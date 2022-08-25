@@ -31,7 +31,6 @@ if __name__ == "__main__":
     hypers = {
         "future_reward_discount": 0.995,
         "q_lr": 0.0003,
-        "v_lr": 0.0003,
         "actor_lr": 0.0003,
         "max_action": 1.0,
         "target_update_step": 0.001,
@@ -53,11 +52,6 @@ if __name__ == "__main__":
             ("l2", "tanh", "input*6+output*6", "input*6+output*6"),
             ("l3", "linear", "input*6+output*6", 1),
         ],
-        "value": [
-            ("l1", "tanh", "input", "input*6+output*6"),
-            ("l2", "tanh", "input*6+output*6", "input*6+output*6"),
-            ("l3", "linear", "input*6+output*6", 1),
-        ],
     }
     training_params = {
         "episodes_per_training": 30,
@@ -69,9 +63,9 @@ if __name__ == "__main__":
         "save_on_iteration": 5,
     }
 
-    # env_key = "Ant-v4"
+    env_key = "Ant-v4"
     # env_key = "InvertedPendulum-v4"
-    env_key = "InvertedDoublePendulum-v4"
+    # env_key = "InvertedDoublePendulum-v4"
     env = gym.make(env_key)
     sac = SoftActorCritic(hypers, layers, training_params, env)
 

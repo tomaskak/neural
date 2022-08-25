@@ -7,14 +7,14 @@ class SACCore:
         self._actor = None
         self._q_1 = None
         self._q_2 = None
-        self._value = None
-        self._target_value = None
+        self._q_1_target = None
+        self._q_2_target = None
+
         self._entropy_weight = None
 
         self._actor_optim = None
         self._q_1_optim = None
         self._q_2_optim = None
-        self._value_optim = None
         self._entropy_weight_optim = None
 
     @property
@@ -42,20 +42,20 @@ class SACCore:
         self._q_2 = new_q_2
 
     @property
-    def value(self):
-        return self._value
+    def q_1_target(self):
+        return self._q_1_target
 
-    @value.setter
-    def value(self, new_value):
-        self._value = new_value
+    @q_1_target.setter
+    def q_1_target(self, new_q_1_target):
+        self._q_1_target = new_q_1_target
 
     @property
-    def target_value(self):
-        return self._target_value
+    def q_2_target(self):
+        return self._q_2_target
 
-    @target_value.setter
-    def target_value(self, new_target_value):
-        self._target_value = new_target_value
+    @q_2_target.setter
+    def q_2_target(self, new_q_2_target):
+        self._q_2_target = new_q_2_target
 
     @property
     def entropy_weight(self):
@@ -88,14 +88,6 @@ class SACCore:
     @q_2_optim.setter
     def q_2_optim(self, new_q_2_optim):
         self._q_2_optim = new_q_2_optim
-
-    @property
-    def value_optim(self):
-        return self._value_optim
-
-    @value_optim.setter
-    def value_optim(self, new_value_optim):
-        self._value_optim = new_value_optim
 
     @property
     def entropy_weight_optim(self):
@@ -138,13 +130,13 @@ class SACShared(SACCore):
     def q_2(self, new_q_2):
         self._assign_or_copy("_q_2", new_q_2)
 
-    @SACCore.value.setter
-    def value(self, new_value):
-        self._assign_or_copy("_value", new_value)
+    @SACCore.q_1_target.setter
+    def q_1_target(self, new_q_1_target):
+        self._assign_or_copy("_q_1_target", new_q_1_target)
 
-    @SACCore.target_value.setter
-    def target_value(self, new_target_value):
-        self._assign_or_copy("_target_value", new_target_value)
+    @SACCore.q_2_target.setter
+    def q_2_target(self, new_q_2_target):
+        self._assign_or_copy("_q_2_target", new_q_2_target)
 
     @SACCore.entropy_weight.setter
     def entropy_weight(self, new_entropy_weight):
@@ -166,10 +158,6 @@ class SACShared(SACCore):
     def q_2_optim(self, new_q_2_optim):
         self._assign_or_copy_optim("_q_2_optim", new_q_2_optim)
 
-    @SACCore.value_optim.setter
-    def value_optim(self, new_value_optim):
-        self._assign_or_copy_optim("_value_optim", new_value_optim)
-
     @SACCore.entropy_weight_optim.setter
     def entropy_weight_optim(self, new_entropy_weight_optim):
         self._assign_or_copy_optim("_entropy_weight_optim", new_entropy_weight_optim)
@@ -180,8 +168,6 @@ class SACContext(SACCore):
         self._actor_loss_fn = None
         self._q_1_loss_fn = None
         self._q_2_loss_fn = None
-        self._value_loss_fn = None
-        self._target_value_loss_fn = None
 
         self._shared = SACShared()
 
@@ -210,22 +196,6 @@ class SACContext(SACCore):
         self._q_2_loss_fn = new_q_2_loss_fn
 
     @property
-    def value_loss_fn(self):
-        return self._value_loss_fn
-
-    @value_loss_fn.setter
-    def value_loss_fn(self, new_value_loss_fn):
-        self._value_loss_fn = new_value_loss_fn
-
-    @property
-    def target_value_loss_fn(self):
-        return self._target_value_loss_fn
-
-    @target_value_loss_fn.setter
-    def target_value_loss_fn(self, new_target_value_loss_fn):
-        self._target_value_loss_fn = new_target_value_loss_fn
-
-    @property
     def shared(self):
         return self._shared
 
@@ -237,20 +207,19 @@ class SACContext(SACCore):
         self.shared.actor = self.actor
         self.shared.q_1 = self.q_1
         self.shared.q_2 = self.q_2
-        self.shared.value = self.value
-        self.shared.target_value = self.target_value
+        self.shared.q_1_target = self.q_1_target
+        self.shared.q_2_target = self.q_2_target
         self.shared.entropy_weight = self.entropy_weight
 
         self.shared.actor_optim = self.actor_optim
         self.shared.q_1_optim = self.q_1_optim
         self.shared.q_2_optim = self.q_2_optim
-        self.shared.value_optim = self.value_optim
         self.shared.entropy_weight_optim = self.entropy_weight_optim
 
     def to(self, device: str):
         self.actor.to(device)
         self.q_1.to(device)
         self.q_2.to(device)
-        self.value.to(device)
-        self.target_value.to(device)
+        self.q_1_target.to(device)
+        self.q_2_target.to(device)
         self.entropy_weight = self.entropy_weight.to(device)

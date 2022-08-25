@@ -82,14 +82,10 @@ class SoftActorCritic(Algo):
             None,
         )
 
-        self.context.value = Model(
-            "value",
-            to_layers(in_size, out_size, layers["value"]),
-            None,
-        )
-
-        self.context.target_value = deepcopy(self.context.value)
-        self.context.target_value.requires_grad_(False)
+        self.context.q_1_target = deepcopy(self.context.q_1)
+        self.context.q_2_target = deepcopy(self.context.q_2)
+        self.context.q_1_target.requires_grad_(False)
+        self.context.q_2_target.requires_grad_(False)
 
         self.context.entropy_weight = torch.tensor(
             [0.0], dtype=torch.float32, requires_grad=True
@@ -115,16 +111,12 @@ class SoftActorCritic(Algo):
         self.context.q_2_optim = torch.optim.Adam(
             self.context.q_2.parameters(), self._q_lr
         )
-        self.context.value_optim = torch.optim.Adam(
-            self.context.value.parameters(), self._v_lr
-        )
         self.context.entropy_weight_optim = torch.optim.Adam(
             [self.context.entropy_weight], self._actor_lr
         )
 
         self.context.q_1_loss_fn = torch.nn.MSELoss()
         self.context.q_2_loss_fn = torch.nn.MSELoss()
-        self.context.value_loss_fn = torch.nn.MSELoss()
         self.context.actor_loss_fn = actor_loss
 
         self.context.update_shared()
@@ -134,21 +126,20 @@ class SoftActorCritic(Algo):
         self.context.shared.actor.to("cpu").share_memory()
         self.context.shared.q_1.to("cpu").share_memory()
         self.context.shared.q_2.to("cpu").share_memory()
-        self.context.shared.value.to("cpu").share_memory()
-        self.context.shared.target_value.to("cpu").share_memory()
+        self.context.shared.q_1_target.to("cpu").share_memory()
+        self.context.shared.q_2_target.to("cpu").share_memory()
         self.context.shared.entropy_weight.to("cpu").share_memory_()
 
     def load(self, settings):
         self.context.actor.load_state_dict(settings["actor"])
         self.context.q_1.load_state_dict(settings["q_1"])
         self.context.q_2.load_state_dict(settings["q_2"])
-        self.context.value.load_state_dict(settings["value"])
-        self.context.target_value.load_state_dict(settings["target_value"])
+        self.context.q_1_target.load_state_dict(settings["q_1_target"])
+        self.context.q_2_target.load_state_dict(settings["q_2_target"])
 
         self.context.actor_optim.load_state_dict(settings["actor_optim"])
         self.context.q_1_optim.load_state_dict(settings["q_1_optim"])
         self.context.q_2_optim.load_state_dict(settings["q_2_optim"])
-        self.context.value_optim.load_state_dict(settings["value_optim"])
 
         self.set_device_and_shmem()
 
@@ -171,16 +162,14 @@ class SoftActorCritic(Algo):
             "actor": self.context.shared.actor.state_dict(),
             "q_1": self.context.shared.q_1.state_dict(),
             "q_2": self.context.shared.q_2.state_dict(),
-            "value": self.context.shared.value.state_dict(),
+            "q_1_target": self.context.shared.q_1_target.state_dict(),
+            "q_2_target": self.context.shared.q_2_target.state_dict(),
             "actor_optim": self.context.shared.actor_optim.state_dict(),
             "q_1_optim": self.context.shared.q_1_optim.state_dict(),
             "q_2_optim": self.context.shared.q_2_optim.state_dict(),
-            "value_optim": self.context.shared.value_optim.state_dict(),
-            "target_value": self.context.shared.target_value.state_dict(),
             "hyperparameters": {
                 "future_reward_discount": self._gamma,
                 "q_lr": self._q_lr,
-                "v_lr": self._v_lr,
                 "actor_lr": self._actor_lr,
                 "target_update_step": self._alpha,
                 "experience_replay_size": self._replay_size,
@@ -207,7 +196,7 @@ class SoftActorCritic(Algo):
 
         buffers = SharedBuffers(
             self._hypers["experience_replay_size"],
-            50,
+            20,
             "f",
             [self._in_size, self._out_size, 1, self._in_size, 1],
         )

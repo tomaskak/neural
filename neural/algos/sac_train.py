@@ -73,16 +73,11 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         context.q_1.zero_grad()
         context.q_2.zero_grad()
         context.actor.zero_grad()
-        context.value.zero_grad()
         context.entropy_weight.grad = None
 
-        predicted_values = context.value.forward(states)
-        new_actions, log_probs = context.actor.forward(states)
         predicted_q_1s = context.q_1.forward(state_actions)
         predicted_q_2s = context.q_2.forward(state_actions)
-        target_next_state_values = context.target_value.forward(next_states)
-
-        new_state_actions = torch.cat((states, new_actions), 1)
+        new_actions, log_probs = context.actor.forward(states)
 
         # Entropy weight update
         entropy_loss = -(
@@ -92,33 +87,27 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         e_weight = context.entropy_weight.exp().detach()
         entropy_loss.backward()
 
+        # Q updates
+        new_state_actions = torch.cat((states, new_actions), 1)
         predicted_new_qs = torch.minimum(
             context.q_1.forward(new_state_actions),
             context.q_2.forward(new_state_actions),
         )
+        next_actions, next_log_probs = context.actor.forward(next_states)
 
-        # Q updates
-        target_qs = (
-            rewards
-            + dones * hypers["future_reward_discount"] * target_next_state_values
-        )
-        target_qs = target_qs.reshape(-1, 1)
+        next_state_actions = torch.cat((next_states, next_actions), dim=1)
+        target_qs = torch.minimum(
+            context.q_1_target.forward(next_state_actions),
+            context.q_2_target.forward(next_state_actions),
+        ) - e_weight * next_log_probs.reshape(-1, 1)
 
-        q_1_loss = context.q_1_loss_fn(predicted_q_1s, target_qs.float())
-        q_2_loss = context.q_2_loss_fn(predicted_q_2s, target_qs.float())
+        q_target = rewards + dones * hypers["future_reward_discount"] * target_qs
 
+        q_1_loss = context.q_1_loss_fn(predicted_q_1s, q_target.detach())
+        q_2_loss = context.q_2_loss_fn(predicted_q_2s, q_target.detach())
         q_1_loss.backward()
         q_2_loss.backward()
 
-        # Value update
-        target_vs = predicted_new_qs.detach() - e_weight * log_probs.detach().reshape(
-            -1, 1
-        )
-        v_loss = context.value_loss_fn(predicted_values, target_vs.float())
-
-        v_loss.backward()
-
-        # Policy update
         loss = context.actor_loss_fn(
             e_weight * log_probs.reshape(-1, 1), predicted_new_qs
         )
@@ -127,11 +116,17 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         context.actor_optim.step()
         context.q_1_optim.step()
         context.q_2_optim.step()
-        context.value_optim.step()
         context.entropy_weight_optim.step()
         with torch.no_grad():
             for target, update in zip(
-                context.target_value.parameters(), context.value.parameters()
+                context.q_1_target.parameters(), context.q_1.parameters()
+            ):
+                target.copy_(
+                    hypers["target_update_step"] * update
+                    + (1.0 - hypers["target_update_step"]) * target
+                )
+            for target, update in zip(
+                context.q_2_target.parameters(), context.q_2.parameters()
             ):
                 target.copy_(
                     hypers["target_update_step"] * update
