@@ -97,6 +97,9 @@ class OneSimpleBuffer:
     def __enter__(self):
         return self
 
+    def __exit__(self):
+        pass
+
     def __len__(self):
         return len(self._buffer)
 
