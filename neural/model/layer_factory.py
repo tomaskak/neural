@@ -118,6 +118,10 @@ def make_layer(name: str, type_key: str, in_size: int, out_size: int):
         return Layer(name, in_size, out_size, bias=True)
     elif type_key == "linear:no_bias":
         return Layer(name, in_size, out_size, bias=False)
+    elif type_key == "linear:norm":
+        return Layer(name, in_size, out_size, bias=True, norm=True)
+    elif type_key == "linear:no_bias:norm":
+        return Layer(name, in_size, out_size, bias=False, norm=True)
     else:
         activation = None
         if type_key == "tanh":

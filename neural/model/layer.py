@@ -18,12 +18,15 @@ class Layer(nn.Module):
         U[-sqrt(6)/sqrt(in_size + out_size), sqrt(6)/sqrt(in_size + out_size)]
     """
 
-    def __init__(self, name: str, in_size: int, out_size: int, bias: bool):
+    def __init__(
+        self, name: str, in_size: int, out_size: int, bias: bool, norm: bool = False
+    ):
         super().__init__()
         self._name = name
         self.weights = nn.Parameter(data=xavier_init(in_size, out_size))
         self.bias = nn.Parameter(zeros((out_size,))) if bias else None
         self._shape = (in_size, out_size)
+        self.norm = norm
 
     def forward(self, X: Tensor) -> Tensor:
         """
@@ -38,15 +41,19 @@ class Layer(nn.Module):
             (A @ x.T + b).T = y.T
             x @ A.T + b.T = y.T
         """
-        # if self.bias is not None:
-        #     return nn.functional.layer_norm(X.T, (X.shape[0],)).T @ self.weights.T + self.bias
-        # else:
-        #     return nn.functional.layer_norm(X.T, (X.shape[0],)).T @ self.weights.T
-
-        if self.bias is not None:
-            return X @ self.weights.T + self.bias
+        if self.norm:
+            if self.bias is not None:
+                return (
+                    nn.functional.layer_norm(X.T, (X.shape[0],)).T @ self.weights.T
+                    + self.bias
+                )
+            else:
+                return nn.functional.layer_norm(X.T, (X.shape[0],)).T @ self.weights.T
         else:
-            return X @ self.weights.T
+            if self.bias is not None:
+                return X @ self.weights.T + self.bias
+            else:
+                return X @ self.weights.T
 
     @property
     def shape(self):
