@@ -97,7 +97,7 @@ class OneSimpleBuffer:
     def __enter__(self):
         return self
 
-    def __exit__(self):
+    def __exit__(self, *args, **kwargs):
         pass
 
     def __len__(self):
