@@ -214,8 +214,8 @@ class SplitExpReplayReader:
         from_one = max((sample_size * self._pct_one) // 1, 1)
         from_two = sample_size - from_one
 
-        sample_one = self._buffers_one.sample(from_one)
-        sample_two = self._buffers_two.sample(from_two)
+        sample_one = self._buffers_one.sample(int(from_one))
+        sample_two = self._buffers_two.sample(int(from_two))
 
         self._pct_one -= self._decrement
 
