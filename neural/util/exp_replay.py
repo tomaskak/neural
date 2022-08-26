@@ -188,12 +188,12 @@ class SharedBuffers(Buffers):
         ]
 
 def read_data(path:str, dtype:str, columns:tuple[int,int]):
-    data = np.loadtxt(path,dtype, usecols=range(columns[0],columns[1]), delimiter=',')
+    data = np.loadtxt(path,dtype, usecols=list(range(columns[0],columns[1])), delimiter=',')
     return data
         
 class StaticBuffersFromFile(Buffers):
     def __init__(self, path:str,  partitions: int, dtype:str="f", elem_parts: list=list([1]), columns:tuple[int,int]=None):
-        print(f"Reading data from {path}")
+        print(f"Reading data from {path} using columns {columns}")
         data = read_data(path, dtype, columns)
         print(f"{len(data)} rows read from {path}")
         super().__init__(len(data), partitions, dtype, elem_parts)
