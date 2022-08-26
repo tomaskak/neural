@@ -296,6 +296,7 @@ class ExpReplayReader(ExpReplayCore):
                 size=(sample_size,),
             )
             indexes = indexes if sample_size > 1 else [indexes]
+            print(f"indexes={indexes}, self._buffers.item_size={self._buffers.item_size}, self._buffers.item_parts={self._buffers.item_parts}")
 
             for count, i in enumerate(indexes):
                 offset = i * self._buffers.item_size
