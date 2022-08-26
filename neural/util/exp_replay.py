@@ -111,19 +111,19 @@ class OneSimpleBuffer:
 
     @property
     def max_elem(self):
-        return self._max_elem.value
+        return self._max_elem
 
     @max_elem.setter
     def max_elem(self, new_value):
-        self._max_elem.value = new_value
+        self._max_elem = new_value
 
     @property
     def index(self):
-        return self._index.value
+        return self._index
 
     @index.setter
     def index(self, new_value):
-        self._index.value = new_value
+        self._index = new_value
 
 
 class OneSharedBuffer:
