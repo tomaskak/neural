@@ -1,4 +1,4 @@
-from ..util.exp_replay import ExpReplayReader, ExpReplayWriter, SharedBuffers
+from ..util.exp_replay import ExpReplayReader, ExpReplayWriter, SharedBuffers, SplitExpReplayReader, StaticBuffersFromFile
 from ..tools.timer import timer, init_timer_manager, PrintManager
 import torch
 import numpy as np
