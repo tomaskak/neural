@@ -210,7 +210,7 @@ class StaticBuffersFromFile(Buffers):
 
         i = 0
         for row in data:
-            for k, elem in row[:]:
+            for k, elem in enumerate(row[:]):
                 self._buffers[0][i*len(row)+k] = elem
             i += 1
         self._buffers[0].index = i*len(data[0])
