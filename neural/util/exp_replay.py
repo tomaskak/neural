@@ -193,6 +193,7 @@ class SharedBuffers(Buffers):
 
 def read_data(path:str, dtype:str, columns:tuple[int,int]):
     data = np.loadtxt(path,dtype, usecols=list(range(columns[0],columns[1])), delimiter=',')
+    print(f"data read = {data}")
     return data
         
 class StaticBuffersFromFile(Buffers):
