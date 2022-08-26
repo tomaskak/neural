@@ -232,7 +232,7 @@ class SplitExpReplayReader:
 
         self._pct_one -= self._decrement
 
-        return np.concatenate(sample_one, sample_two)
+        return [np.concatenate(one, two) for one, two in zip(sample_one, sample_two)]
 
 class ExpReplayCore:
     def __init__(self, buffers: Buffers):
