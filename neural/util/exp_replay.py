@@ -210,9 +210,10 @@ class StaticBuffersFromFile(Buffers):
 
         i = 0
         for row in data:
-            self._buffers[0][i*len(row):] = row[:]
+            for k, elem in row[:]:
+                self._buffers[0][i*len(row)+k] = elem
             i += 1
-        self._buffers[0].index = i
+        self._buffers[0].index = i*len(data[0])
         self._buffers[0].max_elem = i
 
 class SplitExpReplayReader:
