@@ -232,6 +232,7 @@ class SplitExpReplayReader:
 
         self._pct_one -= self._decrement
 
+        print(f"sample_one={sample_one}, sample_two={sample_two}")
         return [np.concatenate(one, two) for one, two in zip(sample_one, sample_two)]
 
 class ExpReplayCore:
