@@ -71,9 +71,15 @@ class ActivatedLayer(Layer):
     """
 
     def __init__(
-        self, name: str, in_size: int, out_size: int, activation_fn, bias: bool
+        self,
+        name: str,
+        in_size: int,
+        out_size: int,
+        activation_fn,
+        bias: bool,
+        norm: bool = False,
     ):
-        super().__init__(name, in_size, out_size, bias)
+        super().__init__(name, in_size, out_size, bias, norm)
         self.activation = activation_fn
 
     def forward(self, X: Tensor) -> Tensor:

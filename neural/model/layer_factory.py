@@ -124,15 +124,22 @@ def make_layer(name: str, type_key: str, in_size: int, out_size: int):
         return Layer(name, in_size, out_size, bias=False, norm=True)
     else:
         activation = None
+        norm = False
         if type_key == "tanh":
             activation = nn.Tanh()
+        elif type_key == "tanh:norm":
+            activation = nn.Tanh()
+            norm = True
         elif type_key == "sigmoid":
             activation = nn.Sigmoid()
         elif type_key == "ReLU":
             activation = nn.ReLU()
+        elif type_key == "ReLU:norm":
+            activation = nn.ReLU()
+            norm = True
         else:
             raise ValueError(f"Unexpected layer type {type_key}")
-        return ActivatedLayer(name, in_size, out_size, activation, bias=True)
+        return ActivatedLayer(name, in_size, out_size, activation, bias=True, norm=norm)
 
 
 def to_layers(in_size: int, out_size: int, layer_defs: list) -> list:
