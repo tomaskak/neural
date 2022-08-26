@@ -202,6 +202,8 @@ class StaticBuffersFromFile(Buffers):
         print(f"{len(data)} rows read from {path}")
         super().__init__(len(data), partitions, dtype, elem_parts)
 
+        print(f"elem_parts={elem_parts}, size={self.size}, elem_size={self.item_size}")
+
         self._buffers = [
             OneSimpleBuffer(dtype, 0.0, self._part_size * self._elem_size)
             for _ in range(partitions)
