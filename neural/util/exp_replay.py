@@ -235,8 +235,8 @@ class SplitExpReplayReader:
 
         self._pct_one -= self._decrement
 
-        print(f"sample_one={sample_one}, sample_two={sample_two}")
-        return [np.concatenate(one, two) for one, two in zip(sample_one, sample_two)]
+        # print(f"sample_one={sample_one}, sample_two={sample_two}")
+        return [np.concatenate((one, two), axis=0) for one, two in zip(sample_one, sample_two)]
 
 class ExpReplayCore:
     def __init__(self, buffers: Buffers):
@@ -296,7 +296,6 @@ class ExpReplayReader(ExpReplayCore):
                 size=(sample_size,),
             )
             indexes = indexes if sample_size > 1 else [indexes]
-            print(f"indexes={indexes}, self._buffers.item_size={self._buffers.item_size}, self._buffers.item_parts={self._buffers.item_parts}")
 
             for count, i in enumerate(indexes):
                 offset = i * self._buffers.item_size
