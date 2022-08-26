@@ -24,6 +24,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--render", "-r", dest="render", action="store_true", default=False
     )
+    parser.add_argument(
+        "--demo-file", "-d", dest="demo_file", type=str
+    )
     args = parser.parse_args()
 
     init_timer_manager(PrintManager(5000))
@@ -39,18 +42,19 @@ if __name__ == "__main__":
     }
     layers = {
         "actor": [
-            ("l1", "tanh", "input", "input*4"),
-            ("l2", "tanh", "input*4", "output*2"),
+            ("l1", "ReLU", "input", "400"),
+            ("l2", "ReLU", "400", "400"),
+            ("l3", "linear", "400", "output*2"),
         ],
         "q_1": [
-            ("l1", "tanh", "input + output", "input*6+output*6"),
-            ("l2", "tanh", "input*6+output*6", "input*6+output*6"),
-            ("l3", "linear", "input*6+output*6", 1),
+            ("l1", "ReLU", "input + output", "400"),
+            ("l2", "ReLU", "400", "400"),
+            ("l3", "linear", "400", 1),
         ],
         "q_2": [
-            ("l1", "tanh", "input + output", "input*6+output*6"),
-            ("l2", "tanh", "input*6+output*6", "input*6+output*6"),
-            ("l3", "linear", "input*6+output*6", 1),
+            ("l1", "ReLU", "input + output", "400"),
+            ("l2", "ReLU", "400", "400"),
+            ("l3", "linear", "400", 1),
         ],
     }
     training_params = {
@@ -61,6 +65,7 @@ if __name__ == "__main__":
         "training_iterations": 100 if args.iterations is None else args.iterations,
         "device": "cpu",
         "save_on_iteration": 5,
+        "demo_data_file": args.demo_file
     }
 
     env_key = "Ant-v4"
