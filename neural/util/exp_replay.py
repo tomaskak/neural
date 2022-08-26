@@ -84,9 +84,8 @@ class Buffers(ABC):
     def item_parts(self):
         return self._elem_parts
 
-    @abstractmethod
     def __getitem__(self, index: int):
-        ...
+        return self._buffers[index]
 
 
 class OneSimpleBuffer:
@@ -179,7 +178,7 @@ class OneSharedBuffer:
 
 class SharedBuffers(Buffers):
     def __init__(
-        self, size: int, partitions: int, dtype="f", elem_parts: list = list([1])
+        self, size: int, partitions: int, dtype:str="f", elem_parts: list = list([1])
     ):
         super().__init__(size, partitions, dtype, elem_parts)
         # contains (idx, max_elem, buffer) for each partition
@@ -188,9 +187,39 @@ class SharedBuffers(Buffers):
             for _ in range(partitions)
         ]
 
-    def __getitem__(self, index: int):
-        return self._buffers[index]
+def read_data(path:str, dtype:str, columns:tuple[int,int]):
+    data = np.loadtxt(path,dtype, usecols=range(columns[0],columns[1]), delimiter=',')
+    return data
+        
+class StaticBuffersFromFile(Buffers):
+    def __init__(self, path:str,  partitions: int, dtype:str="f", elem_parts: list=list([1]), columns:tuple[int,int]=None):
+        print(f"Reading data from {path}")
+        data = read_data(path, dtype, columns)
+        print(f"{len(data)} rows read from {path}")
+        super().__init__(len(data), partitions, dtype, elem_parts)
 
+        self._buffers = [
+            OneSimpleBuffer(dtype, 0.0, self._part_size * self._elem_size)
+            for _ in range(partitions)
+            ]
+
+class SplitExpReplayReader:
+    def __init__(self, buffers_one: Buffers, buffers_two: Buffers, percent_of_one: float, decrement: float=None):
+        self._buffers_one = ExpReplayReader(buffers_one)
+        self._buffers_two = ExpReplayReader(buffers_two)
+        self._pct_one = percent_of_one
+        self._decrement = decrement
+
+    def sample(self, sample_size: int):
+        from_one = max((sample_size * self._pct_one) // 1, 1)
+        from_two = sample_size - from_one
+
+        sample_one = self._buffers_one.sample(from_one)
+        sample_two = self._buffers_two.sample(from_two)
+
+        self._pct_one -= self._decrement
+
+        return np.concatenate(sample_one, sample_two)
 
 class ExpReplayCore:
     def __init__(self, buffers: Buffers):

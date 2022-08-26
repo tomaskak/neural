@@ -27,9 +27,15 @@ def sac_replay_sample(
     hypers: dict,
     buffers: SharedBuffers,
     device: str,
+    demo_args: tuple|None=None
 ):
     init_timer_manager(PrintManager(20000))
-    exp_replay = ExpReplayReader(buffers)
+
+    exp_replay = None
+    if demo_args is not None:
+        exp_replay = SplitExpReplayReader(buffers, StaticBuffersFromFile(*demo_args), 0.5, 0.000001)
+    else:
+        exp_replay = ExpReplayReader(buffers)
     live_batches = {}
     free_tensors = []
 

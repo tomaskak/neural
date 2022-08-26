@@ -149,7 +149,6 @@ class SoftActorCritic(Algo):
         self._hypers = hypers
         self._gamma = hypers["future_reward_discount"]
         self._q_lr = hypers["q_lr"]
-        self._v_lr = hypers["v_lr"]
         self._actor_lr = hypers["actor_lr"]
         self._alpha = hypers["target_update_step"]
         self._replay_size = hypers["experience_replay_size"]
@@ -203,6 +202,10 @@ class SoftActorCritic(Algo):
             name="replay_store", target=sac_replay_store, args=(replay_buf_q, buffers)
         )
 
+        demo_args = None
+        path = self._training_params.get("demo_data_file", None)
+        if path is not None:
+            demo_args = (path, 1, 'f', [self._in_size, self._out_size, 1, self._in_size, 1], (0,self._in_size+self._out_size+1+self._in_size+1))
         replay_sample_process = Process(
             name="replay_sample",
             target=sac_replay_sample,
@@ -214,6 +217,7 @@ class SoftActorCritic(Algo):
                 self._hypers,
                 buffers,
                 self._device,
+                demo_args
             ),
         )
 
@@ -349,7 +353,7 @@ class SoftActorCritic(Algo):
                 with torch.no_grad():
                     actions, log_probs = self.context.shared.actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float(),
-                        deterministic=False,
+                        deterministic=True,
                     )
 
                     next_observation, reward, done, info = self._env.step(
