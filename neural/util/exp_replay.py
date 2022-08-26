@@ -190,6 +190,7 @@ class SharedBuffers(Buffers):
             for _ in range(partitions)
         ]
 
+
 def read_data(path:str, dtype:str, columns:tuple[int,int]):
     data = np.loadtxt(path,dtype, usecols=list(range(columns[0],columns[1])), delimiter=',')
     return data
@@ -205,6 +206,14 @@ class StaticBuffersFromFile(Buffers):
             OneSimpleBuffer(dtype, 0.0, self._part_size * self._elem_size)
             for _ in range(partitions)
             ]
+
+
+        i = 0
+        for row in data:
+            self._buffers[0][i*len(row):] = row[:]
+            i += 1
+        self._buffers[0].index = i
+        self._buffers[0].max_elem = i
 
 class SplitExpReplayReader:
     def __init__(self, buffers_one: Buffers, buffers_two: Buffers, percent_of_one: float, decrement: float=None):
