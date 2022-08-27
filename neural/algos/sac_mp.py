@@ -349,7 +349,7 @@ class SoftActorCritic(Algo):
                 with torch.no_grad():
                     actions, log_probs = self.context.shared.actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float(),
-                        deterministic=False,
+                        deterministic=True,
                     )
 
                     next_observation, reward, done, info = self._env.step(
