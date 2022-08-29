@@ -37,6 +37,7 @@ class SoftActorCritic(Algo):
         "minibatch_size": int,
         "max_action": float,
         "target_entropy_weight": float,
+        "action_type": dict
     }
 
     required_model_defs = ["actor", "q_1", "q_2"]
@@ -67,7 +68,7 @@ class SoftActorCritic(Algo):
         self.context = SACContext()
 
         self.context.actor = NormalModel(
-            "actor", to_layers(in_size, out_size, layers["actor"]), None  # graph_sink
+            "actor", to_layers(in_size, out_size, layers["actor"]), hypers.get("action_type", { "params_per_action": None}).get("params_per_action", None), None  # graph_sink
         )
 
         self.context.q_1 = Model(
@@ -173,6 +174,7 @@ class SoftActorCritic(Algo):
                 "minibatch_size": self._mini_batch_size,
                 "max_action": self._hypers["max_action"],
                 "target_entropy_weight": self._hypers["target_entropy_weight"],
+                "action_type": self._hypers["action_type"]
             },
         }
 

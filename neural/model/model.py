@@ -47,9 +47,10 @@ class Model(torch.nn.Module):
 
 
 class NormalModel(Model):
-    def __init__(self, name, layers, sink=None):
+    def __init__(self, name, layers, activation_params=None, sink=None):
         super().__init__(name, layers, sink)
         self._tanh = torch.nn.Tanh()
+        self._activation_params = activation_params
 
     def forward(self, X, deterministic=False):
         output = super().forward(X)
@@ -71,7 +72,7 @@ class NormalModel(Model):
                  [ log(P(action0)) + log(P(action1)) ... + log(P(actionN)), ... ]
         """
         actions = []
-        log_prob = None
+        log_probs = []
         # Iterate over each pair of mu and sigma.
         for i in range(len(norm_params[0]) // 2):
             first = i * 2
@@ -89,14 +90,29 @@ class NormalModel(Model):
             else:
                 action = mu + sigma * z
 
-            if log_prob is None:
-                log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
-            else:
-                log_prob += torch.distributions.normal.Normal(mu, sigma).log_prob(
-                    action
-                )
+            log_probs.append(torch.distributions.normal.Normal(mu, sigma).log_prob(action))
             actions.append(action.reshape(-1, 1))
+
+        if self._activation_params is not None:
+            activated_actions = self._tanh(torch.cat(actions, dim=-1).detach())
+            for k, aa, in enumerate(activated_actions):
+                current_index = 0
+                for num_params in self._activation_params:
+                    is_activated = aa[current_index] >= 0.0
+                    current_index += 1
+                    if not is_activated:
+                        for i in range(num_params):
+                            actions[current_index + i][k] *= 0.0
+                            log_probs[current_index + i][k] *= 0.0
+                    current_index += num_params
         actions = torch.cat(actions, dim=-1)
+        log_prob = None
+        for lp in log_probs:
+            if log_prob is None:
+                log_prob = lp
+            else:
+                log_prob += lp
+        
         tanh_correction = -2 * (
             torch.log(torch.tensor(2.0))
             - actions
