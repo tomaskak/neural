@@ -13,6 +13,7 @@ def sac_train(
     report_queue: Queue,
     done_queue: Queue,
     device: str = "cpu",
+    discrete=False
 ):
     """
     Defines the training loop for the SAC algorithm.
@@ -52,7 +53,7 @@ def sac_train(
                         # This updates the state of all models in the 'shared' structure.
                         context.update_shared()
 
-                    process_batch(context, hypers, batch)
+                    process_batch(context, hypers, batch, discrete)
 
                     done_queue.put(("DONE", batch_id))
                     for item in batch:
@@ -66,7 +67,7 @@ def sac_train(
                 print(f"Received unknown command of type {type(item)} and value={item}")
 
 
-def process_batch(context: SACContext, hypers: dict, batch: tuple):
+def process_batch(context: SACContext, hypers: dict, batch: tuple, discrete:bool=False):
     with timer("process-one-batch"):
         states, actions, rewards, next_states, dones, state_actions = batch
 
@@ -75,43 +76,94 @@ def process_batch(context: SACContext, hypers: dict, batch: tuple):
         context.actor.zero_grad()
         context.entropy_weight.grad = None
 
-        predicted_q_1s = context.q_1.forward(state_actions)
-        predicted_q_2s = context.q_2.forward(state_actions)
-        new_actions, log_probs = context.actor.forward(states)
+        if not discrete:
+            predicted_q_1s = context.q_1.forward(state_actions)
+            predicted_q_2s = context.q_2.forward(state_actions)
+            new_actions, log_probs = context.actor.forward(states)
 
-        # Entropy weight update
-        entropy_loss = -(
-            context.entropy_weight.exp()
-            * (log_probs + hypers["target_entropy_weight"]).detach()
-        ).mean()
-        e_weight = context.entropy_weight.exp().detach()
-        entropy_loss.backward()
+            # Entropy weight update
+            entropy_loss = -(
+                context.entropy_weight.exp()
+                * (log_probs + hypers["target_entropy_weight"]).detach()
+            ).mean()
+            e_weight = context.entropy_weight.exp().detach()
+            entropy_loss.backward()
 
-        # Q updates
-        new_state_actions = torch.cat((states, new_actions), 1)
-        predicted_new_qs = torch.minimum(
-            context.q_1.forward(new_state_actions),
-            context.q_2.forward(new_state_actions),
-        )
-        next_actions, next_log_probs = context.actor.forward(next_states)
+            # Q updates
+            new_state_actions = torch.cat((states, new_actions), 1)
+            predicted_new_qs = torch.minimum(
+                context.q_1.forward(new_state_actions),
+                context.q_2.forward(new_state_actions),
+            )
+            next_actions, next_log_probs = context.actor.forward(next_states)
 
-        next_state_actions = torch.cat((next_states, next_actions), dim=1)
-        target_qs = torch.minimum(
-            context.q_1_target.forward(next_state_actions),
-            context.q_2_target.forward(next_state_actions),
-        ) - e_weight * next_log_probs.reshape(-1, 1)
+            next_state_actions = torch.cat((next_states, next_actions), dim=1)
+            target_qs = torch.minimum(
+                context.q_1_target.forward(next_state_actions),
+                context.q_2_target.forward(next_state_actions),
+            ) - e_weight * next_log_probs.reshape(-1, 1)
 
-        q_target = rewards + dones * hypers["future_reward_discount"] * target_qs
+            q_target = rewards + dones * hypers["future_reward_discount"] * target_qs
 
-        q_1_loss = context.q_1_loss_fn(predicted_q_1s, q_target.detach())
-        q_2_loss = context.q_2_loss_fn(predicted_q_2s, q_target.detach())
-        q_1_loss.backward()
-        q_2_loss.backward()
+            q_1_loss = context.q_1_loss_fn(predicted_q_1s, q_target.detach())
+            q_2_loss = context.q_2_loss_fn(predicted_q_2s, q_target.detach())
+            q_1_loss.backward()
+            q_2_loss.backward()
 
-        loss = context.actor_loss_fn(
-            e_weight * log_probs.reshape(-1, 1), predicted_new_qs
-        )
-        loss.backward()
+            loss = context.actor_loss_fn(
+                e_weight * log_probs.reshape(-1, 1), predicted_new_qs
+            )
+            loss.backward()
+        else:
+            predicted_q_1s = context.q_1.forward(states)
+            predicted_q_2s = context.q_2.forward(states)
+            new_actions = context.actor.forward(states)
+            log_probs = torch.log(new_actions + (new_actions == 0.0)*1e-8)
+
+            # print(f"predicted_q_1s={predicted_q_1s}, new_actions={new_actions}, log_probs={log_probs}")
+
+            # Entropy weight update
+            entropy_loss = (new_actions.detach()*-1*(
+                context.entropy_weight.exp()
+                * (log_probs.detach() + hypers["target_entropy_weight"]).detach()
+            )).sum(dim=1).mean()
+            e_weight = context.entropy_weight.exp().detach()
+            entropy_loss.backward()
+            
+            next_actions = context.actor.forward(next_states)
+            next_log_probs = torch.log(next_actions + (next_actions == 0.0)*1e-8)
+            
+            # Q updates            
+            predicted_new_qs = torch.minimum(
+                predicted_q_1s.detach(), predicted_q_2s.detach()
+            )
+
+            min_qs = torch.minimum(
+                context.q_1_target.forward(next_states),
+                context.q_2_target.forward(next_states),
+            )
+            # print(f"next_actions={next_actions}, min_qs={min_qs}, times={next_actions*min_qs}, next_log_probs={next_log_probs}")
+
+            pre_sum = (next_actions * (min_qs - e_weight * next_log_probs))
+            target_qs = pre_sum.sum(dim=1).unsqueeze(-1)
+            
+
+            q_target = rewards + dones * hypers["future_reward_discount"] * target_qs
+
+            # print(f"predicted_qs={predicted_q_1s.sum(dim=1).reshape(-1, 1)}, target={q_target}")
+
+            # print(f"actions = {actions}")
+            q_1_loss = context.q_1_loss_fn(predicted_q_1s.gather(1, actions.long()), q_target.detach()).mean()
+            q_2_loss = context.q_2_loss_fn(predicted_q_2s.gather(1, actions.long()), q_target.detach()).mean()
+            # print(f"q_1_loss={q_1_loss}, q_2_loss={q_2_loss}")
+            q_1_loss.backward()
+            q_2_loss.backward()
+
+            # print(f"new_actions={new_actions}, log_probs={log_probs}, new_qs={predicted_new_qs}, inner={(e_weight * log_probs - predicted_new_qs)}")
+            loss = (new_actions * (e_weight * log_probs - predicted_new_qs)).sum(dim=1).mean()
+            # print(f"actor_loss={loss}")
+            loss.backward()
+            
 
         context.actor_optim.step()
         context.q_1_optim.step()

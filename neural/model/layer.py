@@ -84,4 +84,9 @@ class ActivatedLayer(Layer):
 
     def forward(self, X: Tensor) -> Tensor:
         out = super().forward(X)
+        # if isinstance(self.activation, nn.Softmax):
+        #     return self.activation(out, dim=X.shape[1])
+        # else:
+        #     return self.activation(out)
+
         return self.activation(out)
