@@ -113,6 +113,7 @@ def make_layer(name: str, type_key: str, in_size: int, out_size: int):
         * tanh
         * sigmoid
         * ReLU
+        * softmax
     """
     if type_key == "linear":
         return Layer(name, in_size, out_size, bias=True)
@@ -137,6 +138,8 @@ def make_layer(name: str, type_key: str, in_size: int, out_size: int):
         elif type_key == "ReLU:norm":
             activation = nn.ReLU()
             norm = True
+        elif type_key == "softmax":
+            activation = nn.Softmax(dim=1)
         else:
             raise ValueError(f"Unexpected layer type {type_key}")
         return ActivatedLayer(name, in_size, out_size, activation, bias=True, norm=norm)
