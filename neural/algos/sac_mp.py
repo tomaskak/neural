@@ -377,6 +377,7 @@ class SoftActorCritic(Algo):
                     if not self._discrete:
                         actions, log_probs = actions
 
+                    rng = self._hypers["max_action"]
                     final_action = (actions[0].numpy() * rng) if not self._discrete else sample_from(actions, deterministic=True)
                     next_observation, reward, done, info = self._env.step(
                         final_action
