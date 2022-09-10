@@ -77,6 +77,11 @@ class SoftActorCritic(Algo):
             self.context.actor = Model(
                 "actor", to_layers(in_size, out_size, layers["actor"]), None
                 )
+        elif hypers["action_type"]["type"] == "continuous-tanh":
+            self._discrete = False
+            self.context.actor = NormalModel(
+                "actor", to_layers(in_size, out_size, layers["actor"]), hypers["action_type"].get("params_per_action", None), None, True
+                )
         else:
             self._discrete = False
             self.context.actor = NormalModel(
