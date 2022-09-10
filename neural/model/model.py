@@ -47,10 +47,11 @@ class Model(torch.nn.Module):
 
 
 class NormalModel(Model):
-    def __init__(self, name, layers, activation_params=None, sink=None):
+    def __init__(self, name, layers, activation_params=None, sink=None, tanh_active=False):
         super().__init__(name, layers, sink)
         self._tanh = torch.nn.Tanh()
         self._activation_params = activation_params
+        self._tanh_active=tanh_active
 
     def forward(self, X, deterministic=False):
         output = super().forward(X)
@@ -112,12 +113,15 @@ class NormalModel(Model):
                 log_prob = lp
             else:
                 log_prob += lp
-        
-        tanh_correction = -2 * (
-            torch.log(torch.tensor(2.0))
-            - actions
-            - torch.nn.functional.softplus(-2 * actions)
-        ).sum(dim=-1)
-        log_prob += tanh_correction
 
-        return self._tanh(actions), log_prob
+        if self._tanh_active:
+            tanh_correction = -2 * (
+                torch.log(torch.tensor(2.0))
+                - actions
+                - torch.nn.functional.softplus(-2 * actions)
+            ).sum(dim=-1)
+            log_prob += tanh_correction
+
+            return self._tanh(actions), log_prob
+        else:
+            return actions, log_prob
