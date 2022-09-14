@@ -181,7 +181,7 @@ class OneSharedBuffer:
 
 class SharedBuffers(Buffers):
     def __init__(
-        self, size: int, partitions: int, dtype:str="f", elem_parts: list = list([1])
+        self, size: int, partitions: int, dtype: str = "f", elem_parts: list = list([1])
     ):
         super().__init__(size, partitions, dtype, elem_parts)
         # contains (idx, max_elem, buffer) for each partition
@@ -191,13 +191,23 @@ class SharedBuffers(Buffers):
         ]
 
 
-def read_data(path:str, dtype:str, columns:tuple[int,int]):
-    data = np.loadtxt(path,dtype, usecols=list(range(columns[0],columns[1])), delimiter=',')
+def read_data(path: str, dtype: str, columns: tuple[int, int]):
+    data = np.loadtxt(
+        path, dtype, usecols=list(range(columns[0], columns[1])), delimiter=","
+    )
     print(f"data read = {data}")
     return data
-        
+
+
 class StaticBuffersFromFile(Buffers):
-    def __init__(self, path:str,  partitions: int, dtype:str="f", elem_parts: list=list([1]), columns:tuple[int,int]=None):
+    def __init__(
+        self,
+        path: str,
+        partitions: int,
+        dtype: str = "f",
+        elem_parts: list = list([1]),
+        columns: tuple[int, int] = None,
+    ):
         print(f"Reading data from {path} using columns {columns}")
         data = read_data(path, dtype, columns)
         print(f"{len(data)} rows read from {path}")
@@ -208,19 +218,25 @@ class StaticBuffersFromFile(Buffers):
         self._buffers = [
             OneSimpleBuffer(dtype, 0.0, self._part_size * self._elem_size)
             for _ in range(partitions)
-            ]
-
+        ]
 
         i = 0
         for row in data:
             for k, elem in enumerate(row[:]):
-                self._buffers[0][i*len(row)+k] = elem
+                self._buffers[0][i * len(row) + k] = elem
             i += 1
-        self._buffers[0].index = i*len(data[0])
+        self._buffers[0].index = i * len(data[0])
         self._buffers[0].max_elem = i
 
+
 class SplitExpReplayReader:
-    def __init__(self, buffers_one: Buffers, buffers_two: Buffers, percent_of_one: float, decrement: float=None):
+    def __init__(
+        self,
+        buffers_one: Buffers,
+        buffers_two: Buffers,
+        percent_of_one: float,
+        decrement: float = None,
+    ):
         self._buffers_one = ExpReplayReader(buffers_one)
         self._buffers_two = ExpReplayReader(buffers_two)
         self._pct_one = percent_of_one
@@ -236,7 +252,11 @@ class SplitExpReplayReader:
         self._pct_one -= self._decrement
 
         # print(f"sample_one={sample_one}, sample_two={sample_two}")
-        return [np.concatenate((one, two), axis=0) for one, two in zip(sample_one, sample_two)]
+        return [
+            np.concatenate((one, two), axis=0)
+            for one, two in zip(sample_one, sample_two)
+        ]
+
 
 class ExpReplayCore:
     def __init__(self, buffers: Buffers):

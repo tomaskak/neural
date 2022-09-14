@@ -61,10 +61,10 @@ class TestSACTrain(TestCase):
 
         process_mock.assert_has_calls(
             [
-                call(self._models_optims, self._hypers, {"key": "0"}),
-                call(self._models_optims, self._hypers, {"key": "1"}),
-                call(self._models_optims, self._hypers, {"key": "2"}),
-                call(self._models_optims, self._hypers, {"key": "3"}),
-                call(self._models_optims, self._hypers, {"key": "4"}),
+                call(self._models_optims, self._hypers, {"key": "0"}, False),
+                call(self._models_optims, self._hypers, {"key": "1"}, False),
+                call(self._models_optims, self._hypers, {"key": "2"}, False),
+                call(self._models_optims, self._hypers, {"key": "3"}, False),
+                call(self._models_optims, self._hypers, {"key": "4"}, False),
             ]
         )

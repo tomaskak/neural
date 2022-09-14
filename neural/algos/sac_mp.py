@@ -20,11 +20,13 @@ import time
 def actor_loss(x, y):
     return (x - y).mean()
 
+
 def sample_from(actions, deterministic=False):
     if deterministic:
         return np.argmax(actions.numpy(), axis=1)[0]
     else:
         return np.random.choice(range(actions.shape[1]), p=actions.flatten().numpy())
+
 
 class SoftActorCritic(Algo):
     """
@@ -42,7 +44,7 @@ class SoftActorCritic(Algo):
         "minibatch_size": int,
         "max_action": float,
         "target_entropy_weight": float,
-        "action_type": dict
+        "action_type": dict,
     }
 
     required_model_defs = ["actor", "q_1", "q_2"]
@@ -76,17 +78,24 @@ class SoftActorCritic(Algo):
             self._discrete = True
             self.context.actor = Model(
                 "actor", to_layers(in_size, out_size, layers["actor"]), None
-                )
+            )
         elif hypers["action_type"]["type"] == "continuous-tanh":
             self._discrete = False
             self.context.actor = NormalModel(
-                "actor", to_layers(in_size, out_size, layers["actor"]), hypers["action_type"].get("params_per_action", None), None, True
-                )
+                "actor",
+                to_layers(in_size, out_size, layers["actor"]),
+                hypers["action_type"].get("params_per_action", None),
+                None,
+                True,
+            )
         else:
             self._discrete = False
             self.context.actor = NormalModel(
-                "actor", to_layers(in_size, out_size, layers["actor"]), hypers["action_type"].get("params_per_action", None), None
-                )
+                "actor",
+                to_layers(in_size, out_size, layers["actor"]),
+                hypers["action_type"].get("params_per_action", None),
+                None,
+            )
 
         self.context.q_1 = Model(
             "q_1", to_layers(in_size, out_size, layers["q_1"]), None
@@ -191,7 +200,7 @@ class SoftActorCritic(Algo):
                 "minibatch_size": self._mini_batch_size,
                 "max_action": self._hypers["max_action"],
                 "target_entropy_weight": self._hypers["target_entropy_weight"],
-                "action_type": self._hypers["action_type"]
+                "action_type": self._hypers["action_type"],
             },
         }
 
@@ -214,7 +223,13 @@ class SoftActorCritic(Algo):
             self._hypers["experience_replay_size"],
             20,
             "f",
-            [self._in_size, self._out_size if not self._discrete else 1, 1, self._in_size, 1],
+            [
+                self._in_size,
+                self._out_size if not self._discrete else 1,
+                1,
+                self._in_size,
+                1,
+            ],
         )
 
         replay_store_process = Process(
@@ -224,7 +239,13 @@ class SoftActorCritic(Algo):
         demo_args = None
         path = self._training_params.get("demo_data_file", None)
         if path is not None:
-            demo_args = (path, 1, 'f', [self._in_size, self._out_size, 1, self._in_size, 1], (0,self._in_size+self._out_size+1+self._in_size+1))
+            demo_args = (
+                path,
+                1,
+                "f",
+                [self._in_size, self._out_size, 1, self._in_size, 1],
+                (0, self._in_size + self._out_size + 1 + self._in_size + 1),
+            )
         replay_sample_process = Process(
             name="replay_sample",
             target=sac_replay_sample,
@@ -236,7 +257,7 @@ class SoftActorCritic(Algo):
                 self._hypers,
                 buffers,
                 self._device,
-                demo_args
+                demo_args,
             ),
         )
 
@@ -251,7 +272,7 @@ class SoftActorCritic(Algo):
                 report_queue,
                 dones_q,
                 self._device,
-                self._discrete
+                self._discrete,
             ),
         )
 
@@ -286,8 +307,11 @@ class SoftActorCritic(Algo):
                                     actions, log_probs = actions
                             rng = self._hypers["max_action"]
 
-
-                            final_action = (actions[0].numpy() * rng) if not self._discrete else sample_from(actions)
+                            final_action = (
+                                (actions[0].numpy() * rng)
+                                if not self._discrete
+                                else sample_from(actions)
+                            )
 
                             next_observation, reward, done, info = self._env.step(
                                 final_action
@@ -383,10 +407,12 @@ class SoftActorCritic(Algo):
                         actions, log_probs = actions
 
                     rng = self._hypers["max_action"]
-                    final_action = (actions[0].numpy() * rng) if not self._discrete else sample_from(actions, deterministic=True)
-                    next_observation, reward, done, info = self._env.step(
-                        final_action
-                                        )
+                    final_action = (
+                        (actions[0].numpy() * rng)
+                        if not self._discrete
+                        else sample_from(actions, deterministic=True)
+                    )
+                    next_observation, reward, done, info = self._env.step(final_action)
 
                     current_total_reward += reward
 

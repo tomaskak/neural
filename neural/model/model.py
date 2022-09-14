@@ -47,11 +47,10 @@ class Model(torch.nn.Module):
 
 
 class NormalModel(Model):
-    def __init__(self, name, layers, activation_params=None, sink=None, tanh_active=False):
+    def __init__(self, name, layers, sink=None, tanh_active=False):
         super().__init__(name, layers, sink)
         self._tanh = torch.nn.Tanh()
-        self._activation_params = activation_params
-        self._tanh_active=tanh_active
+        self._tanh_active = tanh_active
 
     def forward(self, X, deterministic=False):
         output = super().forward(X)
@@ -91,21 +90,11 @@ class NormalModel(Model):
             else:
                 action = mu + sigma * z
 
-            log_probs.append(torch.distributions.normal.Normal(mu, sigma).log_prob(action))
+            log_probs.append(
+                torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+            )
             actions.append(action.reshape(-1, 1))
 
-        if self._activation_params is not None:
-            activated_actions = self._tanh(torch.cat(actions, dim=-1).detach())
-            for k, aa, in enumerate(activated_actions):
-                current_index = 0
-                for num_params in self._activation_params:
-                    is_activated = aa[current_index] >= 0.0
-                    current_index += 1
-                    if not is_activated:
-                        for i in range(num_params):
-                            actions[current_index + i][k] *= 0.0
-                            log_probs[current_index + i][k] *= 0.0
-                    current_index += num_params
         actions = torch.cat(actions, dim=-1)
         log_prob = None
         for lp in log_probs:
