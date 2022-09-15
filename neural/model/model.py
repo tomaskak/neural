@@ -78,6 +78,7 @@ class NormalModel(Model):
             first = i * 2
             mu = norm_params[:, first]
             log_sigma = norm_params[:, first + 1]
+            log_sigma = torch.clamp(log_sigma, min=-20, max=2)
             std_normal = torch.distributions.normal.Normal(
                 torch.tensor(0).float().to(self.device()),
                 torch.tensor(1).float().to(self.device()),
@@ -114,3 +115,26 @@ class NormalModel(Model):
             return self._tanh(actions), log_prob
         else:
             return actions, log_prob
+
+    def partition_to_params(self, norm_params):
+        mu = []
+        log_sigmas = []
+        # Iterate over each pair of mu and sigma.
+        for i in range(len(norm_params[0]) // 2):
+            first = i * 2
+            mu.append(norm_params[:, first])
+            log_sigmas.append(norm_params[:, first + 1])
+        return mu, log_sigmas
+
+    def log_prob_of(self, X, action):
+        output = super().forward(X)
+        mu, log_sigma = self.partition_to_params(output)
+
+        lp = 0.0
+        mu=torch.cat(mu)
+        log_sigma=torch.cat(log_sigma)
+        # print(f"action={action}, mu={mu}, log_sigma={log_sigma}")
+        for act, mu, log_sig in zip(action, mu, log_sigma):
+            lp += torch.distributions.normal.Normal(mu, torch.exp(log_sig)).log_prob(act)
+
+        return torch.distributions.normal.Normal(mu, torch.exp(log_sig)).log_prob(act).sum()

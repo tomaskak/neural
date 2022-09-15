@@ -292,6 +292,8 @@ class SoftActorCritic(Algo):
         total_buf_writes = 0
         while True:
             with timer("explore-iteration"):
+                if hasattr(self._env, "train_mode"):
+                    self._env.train_mode()
                 for episode in range(EPISODES):
                     with timer("explore-episode"):
                         observation = self._env.reset()
@@ -387,6 +389,10 @@ class SoftActorCritic(Algo):
         train_process.join()
 
     def test(self, render=False) -> dict:
+
+        if hasattr(self._env, "test_mode"):
+            self._env.test_mode()
+        
         result = {"average": 0, "max": None, "min": None}
 
         STEPS = self._training_params.get("max_steps", 200)
