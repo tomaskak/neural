@@ -54,7 +54,7 @@ class VanillaGradient(AuxiliaryAlgo):
 
         # print(f"aux_action={action}")
 
-        return action.numpy()
+        return action.cpu().numpy()
 
     def tag_last_action(self, id:int):
         if self._test:
