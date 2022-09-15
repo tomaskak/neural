@@ -392,7 +392,7 @@ class SoftActorCritic(Algo):
 
         if hasattr(self._env, "test_mode"):
             self._env.test_mode()
-        
+
         result = {"average": 0, "max": None, "min": None}
 
         STEPS = self._training_params.get("max_steps", 200)

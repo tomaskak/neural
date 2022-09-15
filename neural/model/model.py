@@ -130,11 +130,11 @@ class NormalModel(Model):
         output = super().forward(X)
         mu, log_sigma = self.partition_to_params(output)
 
-        lp = 0.0
-        mu=torch.cat(mu)
-        log_sigma=torch.cat(log_sigma)
-        # print(f"action={action}, mu={mu}, log_sigma={log_sigma}")
-        for act, mu, log_sig in zip(action, mu, log_sigma):
-            lp += torch.distributions.normal.Normal(mu, torch.exp(log_sig)).log_prob(act)
+        mu = torch.cat(mu)
+        log_sigma = torch.cat(log_sigma)
 
-        return torch.distributions.normal.Normal(mu, torch.exp(log_sig)).log_prob(act).sum()
+        return (
+            torch.distributions.normal.Normal(mu, torch.exp(log_sigma))
+            .log_prob(action)
+            .sum()
+        )
