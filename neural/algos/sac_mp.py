@@ -21,6 +21,13 @@ def actor_loss(x, y):
     return (x - y).mean()
 
 
+def sample_from(actions, deterministic=False):
+    if deterministic:
+        return np.argmax(actions.numpy(), axis=1)[0]
+    else:
+        return np.random.choice(range(actions.shape[1]), p=actions.flatten().numpy())
+
+
 class SoftActorCritic(Algo):
     """
     SoftActorCritic is an off-policy actor-critic algorithm that incorporates entropy
@@ -37,6 +44,7 @@ class SoftActorCritic(Algo):
         "minibatch_size": int,
         "max_action": float,
         "target_entropy_weight": float,
+        "action_type": dict,
     }
 
     required_model_defs = ["actor", "q_1", "q_2"]
@@ -66,9 +74,28 @@ class SoftActorCritic(Algo):
 
         self.context = SACContext()
 
-        self.context.actor = NormalModel(
-            "actor", to_layers(in_size, out_size, layers["actor"]), None  # graph_sink
-        )
+        if hypers["action_type"]["type"] == "discrete":
+            self._discrete = True
+            self.context.actor = Model(
+                "actor", to_layers(in_size, out_size, layers["actor"]), None
+            )
+        elif hypers["action_type"]["type"] == "continuous-tanh":
+            self._discrete = False
+            self.context.actor = NormalModel(
+                "actor",
+                to_layers(in_size, out_size, layers["actor"]),
+                hypers["action_type"].get("params_per_action", None),
+                None,
+                True,
+            )
+        else:
+            self._discrete = False
+            self.context.actor = NormalModel(
+                "actor",
+                to_layers(in_size, out_size, layers["actor"]),
+                hypers["action_type"].get("params_per_action", None),
+                None,
+            )
 
         self.context.q_1 = Model(
             "q_1", to_layers(in_size, out_size, layers["q_1"]), None
@@ -149,7 +176,6 @@ class SoftActorCritic(Algo):
         self._hypers = hypers
         self._gamma = hypers["future_reward_discount"]
         self._q_lr = hypers["q_lr"]
-        self._v_lr = hypers["v_lr"]
         self._actor_lr = hypers["actor_lr"]
         self._alpha = hypers["target_update_step"]
         self._replay_size = hypers["experience_replay_size"]
@@ -174,6 +200,7 @@ class SoftActorCritic(Algo):
                 "minibatch_size": self._mini_batch_size,
                 "max_action": self._hypers["max_action"],
                 "target_entropy_weight": self._hypers["target_entropy_weight"],
+                "action_type": self._hypers["action_type"],
             },
         }
 
@@ -196,13 +223,29 @@ class SoftActorCritic(Algo):
             self._hypers["experience_replay_size"],
             20,
             "f",
-            [self._in_size, self._out_size, 1, self._in_size, 1],
+            [
+                self._in_size,
+                self._out_size if not self._discrete else 1,
+                1,
+                self._in_size,
+                1,
+            ],
         )
 
         replay_store_process = Process(
             name="replay_store", target=sac_replay_store, args=(replay_buf_q, buffers)
         )
 
+        demo_args = None
+        path = self._training_params.get("demo_data_file", None)
+        if path is not None:
+            demo_args = (
+                path,
+                1,
+                "f",
+                [self._in_size, self._out_size, 1, self._in_size, 1],
+                (0, self._in_size + self._out_size + 1 + self._in_size + 1),
+            )
         replay_sample_process = Process(
             name="replay_sample",
             target=sac_replay_sample,
@@ -214,6 +257,7 @@ class SoftActorCritic(Algo):
                 self._hypers,
                 buffers,
                 self._device,
+                demo_args,
             ),
         )
 
@@ -228,6 +272,7 @@ class SoftActorCritic(Algo):
                 report_queue,
                 dones_q,
                 self._device,
+                self._discrete,
             ),
         )
 
@@ -247,21 +292,31 @@ class SoftActorCritic(Algo):
         total_buf_writes = 0
         while True:
             with timer("explore-iteration"):
+                if hasattr(self._env, "train_mode"):
+                    self._env.train_mode()
                 for episode in range(EPISODES):
                     with timer("explore-episode"):
                         observation = self._env.reset()
                         for step in range(STEPS):
                             action = None
                             with torch.no_grad():
-                                actions, log_probs = self.context.shared.actor.forward(
+                                actions = self.context.shared.actor.forward(
                                     torch.tensor(
                                         np.array([observation]), device="cpu"
                                     ).float()
                                 )
+                                if not self._discrete:
+                                    actions, log_probs = actions
                             rng = self._hypers["max_action"]
 
+                            final_action = (
+                                (actions[0].numpy() * rng)
+                                if not self._discrete
+                                else sample_from(actions)
+                            )
+
                             next_observation, reward, done, info = self._env.step(
-                                actions[0].numpy() * rng
+                                final_action
                             )
 
                             # Done value can be set if time limit is reached on an environment causing
@@ -282,7 +337,7 @@ class SoftActorCritic(Algo):
                                     "EXP",
                                     [
                                         observation,
-                                        actions[0].numpy(),
+                                        final_action,
                                         reward,
                                         next_observation,
                                         0.0 if done else 1.0,
@@ -334,6 +389,10 @@ class SoftActorCritic(Algo):
         train_process.join()
 
     def test(self, render=False) -> dict:
+
+        if hasattr(self._env, "test_mode"):
+            self._env.test_mode()
+
         result = {"average": 0, "max": None, "min": None}
 
         STEPS = self._training_params.get("max_steps", 200)
@@ -347,14 +406,20 @@ class SoftActorCritic(Algo):
             for step in range(STEPS):
                 action = None
                 with torch.no_grad():
-                    actions, log_probs = self.context.shared.actor.forward(
+                    actions = self.context.shared.actor.forward(
                         torch.tensor(np.array([observation]), device="cpu").float(),
-                        deterministic=True,
                     )
+                    if not self._discrete:
+                        actions, log_probs = actions
 
-                    next_observation, reward, done, info = self._env.step(
-                        actions[0].numpy()
+                    rng = self._hypers["max_action"]
+                    final_action = (
+                        (actions[0].numpy() * rng)
+                        if not self._discrete
+                        else sample_from(actions, deterministic=True)
                     )
+                    next_observation, reward, done, info = self._env.step(final_action)
+
                     current_total_reward += reward
 
                     if render:

@@ -47,9 +47,10 @@ class Model(torch.nn.Module):
 
 
 class NormalModel(Model):
-    def __init__(self, name, layers, sink=None):
+    def __init__(self, name, layers, sink=None, tanh_active=False):
         super().__init__(name, layers, sink)
         self._tanh = torch.nn.Tanh()
+        self._tanh_active = tanh_active
 
     def forward(self, X, deterministic=False):
         output = super().forward(X)
@@ -71,12 +72,14 @@ class NormalModel(Model):
                  [ log(P(action0)) + log(P(action1)) ... + log(P(actionN)), ... ]
         """
         actions = []
-        log_prob = None
-        # Iterate over each pair of mu and sigma.
+        log_probs = []
+        # Iterate over each pair of mu and sigma, assumes that each pair of two outputs
+        # are one mu and sigma.
         for i in range(len(norm_params[0]) // 2):
             first = i * 2
             mu = norm_params[:, first]
             log_sigma = norm_params[:, first + 1]
+            log_sigma = torch.clamp(log_sigma, min=-20, max=2)
             std_normal = torch.distributions.normal.Normal(
                 torch.tensor(0).float().to(self.device()),
                 torch.tensor(1).float().to(self.device()),
@@ -89,19 +92,51 @@ class NormalModel(Model):
             else:
                 action = mu + sigma * z
 
-            if log_prob is None:
-                log_prob = torch.distributions.normal.Normal(mu, sigma).log_prob(action)
-            else:
-                log_prob += torch.distributions.normal.Normal(mu, sigma).log_prob(
-                    action
-                )
+            log_probs.append(
+                torch.distributions.normal.Normal(mu, sigma).log_prob(action)
+            )
             actions.append(action.reshape(-1, 1))
-        actions = torch.cat(actions, dim=-1)
-        tanh_correction = -2 * (
-            torch.log(torch.tensor(2.0))
-            - actions
-            - torch.nn.functional.softplus(-2 * actions)
-        ).sum(dim=-1)
-        log_prob += tanh_correction
 
-        return self._tanh(actions), log_prob
+        actions = torch.cat(actions, dim=-1)
+
+        log_prob = None
+        for lp in log_probs:
+            if log_prob is None:
+                log_prob = lp
+            else:
+                log_prob += lp
+
+        if self._tanh_active:
+            tanh_correction = -2 * (
+                torch.log(torch.tensor(2.0))
+                - actions
+                - torch.nn.functional.softplus(-2 * actions)
+            ).sum(dim=-1)
+            log_prob += tanh_correction
+
+            return self._tanh(actions), log_prob
+        else:
+            return actions, log_prob
+
+    def partition_to_params(self, norm_params):
+        mu = []
+        log_sigmas = []
+        # Iterate over each pair of mu and sigma.
+        for i in range(len(norm_params[0]) // 2):
+            first = i * 2
+            mu.append(norm_params[:, first])
+            log_sigmas.append(norm_params[:, first + 1])
+        return mu, log_sigmas
+
+    def log_prob_of(self, X, action):
+        output = super().forward(X)
+        mu, log_sigma = self.partition_to_params(output)
+
+        mu = torch.cat(mu)
+        log_sigma = torch.cat(log_sigma)
+
+        return (
+            torch.distributions.normal.Normal(mu, torch.exp(log_sigma))
+            .log_prob(action)
+            .sum()
+        )

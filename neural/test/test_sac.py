@@ -29,7 +29,13 @@ def init_sac(hypers=list()):
 
 class TestSoftActorCritic:
     def test_algo_build_success(self):
-        s = init_sac(hypers={"future_reward_discount": 1.0, "target_update_step": 0.1})
+        s = init_sac(
+            hypers={
+                "future_reward_discount": 1.0,
+                "target_update_step": 0.1,
+                "action_type": {"type": "discrete"},
+            }
+        )
 
     def test_algo_build_non_existant_hyper(self):
         with pytest.raises(ValueError):
