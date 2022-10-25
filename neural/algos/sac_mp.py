@@ -107,6 +107,7 @@ class SoftActorCritic(Algo):
             None,
         )
 
+        # Initialize target Qs as copies of regular Qs. Delayed update toward Q, thus no gradient.
         self.context.q_1_target = deepcopy(self.context.q_1)
         self.context.q_2_target = deepcopy(self.context.q_2)
         self.context.q_1_target.requires_grad_(False)
@@ -116,9 +117,11 @@ class SoftActorCritic(Algo):
             [0.0], dtype=torch.float32, requires_grad=True
         )
 
+        # Entropy target set to input_size. TODO: research alternate start values
         hypers["target_entropy_weight"] = hypers.get(
             "target_entropy_weight", -self._in_size
         )
+
         self._gamma = hypers.get("future_reward_discount", 0.99)
         self._q_lr = hypers.get("q_lr", 0.001)
         self._v_lr = hypers.get("v_lr", 0.001)
@@ -148,6 +151,7 @@ class SoftActorCritic(Algo):
         self.set_device_and_shmem()
 
     def set_device_and_shmem(self):
+        # Each network has a shmem version for data generation and test tasks to get updates.
         self.context.shared.actor.to("cpu").share_memory()
         self.context.shared.q_1.to("cpu").share_memory()
         self.context.shared.q_2.to("cpu").share_memory()
@@ -208,10 +212,21 @@ class SoftActorCritic(Algo):
     def defined_hyperparams(cls) -> dict:
         return SoftActorCritic.defined_hypers
 
-    def train(self):
-        pass
-
     def start(self, render=False, save_hook=None, result_hook=None):
+        """
+        Starts the multiple processes for training and continues to train until trainin_parameters
+        defined number of training steps or episodes are complete.
+
+        save_hook will be called to save the model periodically after a set number of updates.
+        result_hook will recieve training updates.
+
+        Processes created here are:
+            * replay_store - takes new observations in raw form and adds them to the replay buffer
+            * replay_sample - manages a q of minibatches sampled from replay buffer to pass to training
+            * train - processes minibatches as they are available in queue and updates model
+
+        This process will handle exploration, testing, and process management
+        """
         replay_buf_q = Queue(maxsize=10000)
         next_batch_q = Queue(maxsize=200)
         dones_q = Queue()
@@ -236,16 +251,6 @@ class SoftActorCritic(Algo):
             name="replay_store", target=sac_replay_store, args=(replay_buf_q, buffers)
         )
 
-        demo_args = None
-        path = self._training_params.get("demo_data_file", None)
-        if path is not None:
-            demo_args = (
-                path,
-                1,
-                "f",
-                [self._in_size, self._out_size, 1, self._in_size, 1],
-                (0, self._in_size + self._out_size + 1 + self._in_size + 1),
-            )
         replay_sample_process = Process(
             name="replay_sample",
             target=sac_replay_sample,
@@ -258,6 +263,7 @@ class SoftActorCritic(Algo):
                 buffers,
                 self._device,
                 demo_args,
+                z,
             ),
         )
 
@@ -294,6 +300,7 @@ class SoftActorCritic(Algo):
             with timer("explore-iteration"):
                 if hasattr(self._env, "train_mode"):
                     self._env.train_mode()
+
                 for episode in range(EPISODES):
                     with timer("explore-episode"):
                         observation = self._env.reset()
@@ -345,16 +352,18 @@ class SoftActorCritic(Algo):
                                 )
                             )
                             total_buf_writes += 1
-
                             observation = next_observation
 
                             if done or step == STEPS - 1:
                                 break
+
                     if not start_sampling.is_set() and total_buf_writes > 2000:
                         print(f"start sampling!")
                         start_sampling.set()
 
             done = False
+
+            # Clear queue of pending training reports
             try:
                 while True:
                     last_report = report_queue.get_nowait()
@@ -424,8 +433,6 @@ class SoftActorCritic(Algo):
 
                     if render:
                         self._env.render()
-
-                    # print(f"reward={reward}, info={info}")
 
                     if done or step == STEPS - 1:
                         total_steps += step

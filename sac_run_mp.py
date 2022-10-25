@@ -24,9 +24,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--render", "-r", dest="render", action="store_true", default=False
     )
-    parser.add_argument(
-        "--demo-file", "-d", dest="demo_file", type=str
-    )
+    parser.add_argument("--demo-file", "-d", dest="demo_file", type=str)
     args = parser.parse_args()
 
     init_timer_manager(PrintManager(5000))
@@ -65,7 +63,7 @@ if __name__ == "__main__":
         "training_iterations": 100 if args.iterations is None else args.iterations,
         "device": "cpu",
         "save_on_iteration": 5,
-        "demo_data_file": args.demo_file
+        "demo_data_file": args.demo_file,
     }
 
     env_key = "Ant-v4"

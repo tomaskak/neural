@@ -13,6 +13,9 @@ from threading import Event
 
 
 def sac_replay_store(exp_q: Queue, buffers: SharedBuffers):
+    """
+    Accepts and pushes new observations to the replay buffer.
+    """
     init_timer_manager(PrintManager(100000))
     exp_replay = ExpReplayWriter(buffers)
 
@@ -35,6 +38,10 @@ def sac_replay_sample(
     device: str,
     demo_args: tuple | None = None,
 ):
+    """
+    Samples from the replay buffer and pushes new mini batches of samples into the
+    batch_q for training infrastructure to use.
+    """
     init_timer_manager(PrintManager(20000))
 
     exp_replay = None
@@ -58,13 +65,17 @@ def sac_replay_sample(
                 except RuntimeError as e:
                     print(f"Encountered exception {e} when sampling. Retrying.")
                     continue
+
             batch = make_as_tensor(sample, free_tensors, device)
             with timer("pushing-sample-to-q"):
                 batch_q.put(("PROCESS", (batch_id, batch)))
+
             live_batches[batch_id] = batch
             batch_id += 1
 
             with timer("reclaiming-return"):
+                # Reuses tensors passed back from trainer to avoid costly memory allocation
+                # in shmem.
                 try:
                     cmd, return_id = returns_q.get_nowait()
                     if cmd == "DONE":

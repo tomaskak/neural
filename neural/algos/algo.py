@@ -29,12 +29,6 @@ class Algo(ABC):
         """
 
     @abstractmethod
-    def train(self):
-        """
-        Perform one iteration of training.
-        """
-
-    @abstractmethod
     def test(self):
         """
         Test the performance of the model.

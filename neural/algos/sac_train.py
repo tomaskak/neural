@@ -91,7 +91,7 @@ def process_batch(
             e_weight = context.entropy_weight.exp().detach()
             entropy_loss.backward()
 
-            # Q updates
+            # Actor & Q updates
             new_state_actions = torch.cat((states, new_actions), 1)
             predicted_new_qs = torch.minimum(
                 context.q_1.forward(new_state_actions),
@@ -122,8 +122,6 @@ def process_batch(
             new_actions = context.actor.forward(states)
             log_probs = torch.log(new_actions + (new_actions == 0.0) * 1e-8)
 
-            # print(f"predicted_q_1s={predicted_q_1s}, new_actions={new_actions}, log_probs={log_probs}")
-
             # Entropy weight update
             entropy_loss = (
                 (
@@ -145,7 +143,7 @@ def process_batch(
             next_actions = context.actor.forward(next_states)
             next_log_probs = torch.log(next_actions + (next_actions == 0.0) * 1e-8)
 
-            # Q updates
+            # Actor & Q updates
             predicted_new_qs = torch.minimum(
                 predicted_q_1s.detach(), predicted_q_2s.detach()
             )
@@ -154,39 +152,35 @@ def process_batch(
                 context.q_1_target.forward(next_states),
                 context.q_2_target.forward(next_states),
             )
-            # print(f"next_actions={next_actions}, min_qs={min_qs}, times={next_actions*min_qs}, next_log_probs={next_log_probs}")
 
             pre_sum = next_actions * (min_qs - e_weight * next_log_probs)
             target_qs = pre_sum.sum(dim=1).unsqueeze(-1)
 
             q_target = rewards + dones * hypers["future_reward_discount"] * target_qs
 
-            # print(f"predicted_qs={predicted_q_1s.sum(dim=1).reshape(-1, 1)}, target={q_target}")
-
-            # print(f"actions = {actions}")
             q_1_loss = context.q_1_loss_fn(
                 predicted_q_1s.gather(1, actions.long()), q_target.detach()
             ).mean()
             q_2_loss = context.q_2_loss_fn(
                 predicted_q_2s.gather(1, actions.long()), q_target.detach()
             ).mean()
-            # print(f"q_1_loss={q_1_loss}, q_2_loss={q_2_loss}")
+
             q_1_loss.backward()
             q_2_loss.backward()
 
-            # print(f"new_actions={new_actions}, log_probs={log_probs}, new_qs={predicted_new_qs}, inner={(e_weight * log_probs - predicted_new_qs)}")
             loss = (
                 (new_actions * (e_weight * log_probs - predicted_new_qs))
                 .sum(dim=1)
                 .mean()
             )
-            # print(f"actor_loss={loss}")
+
             loss.backward()
 
         context.actor_optim.step()
         context.q_1_optim.step()
         context.q_2_optim.step()
         context.entropy_weight_optim.step()
+
         with torch.no_grad():
             for target, update in zip(
                 context.q_1_target.parameters(), context.q_1.parameters()

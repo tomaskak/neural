@@ -6,6 +6,9 @@ import torch
 
 
 def van_train(shared, policy, optim, next_batch_q, done_queue, device):
+    """
+    To train a policy using vanilla stochastic gradient descent.
+    """
     policy.to(device)
 
     init_timer_manager(PrintManager(10000))

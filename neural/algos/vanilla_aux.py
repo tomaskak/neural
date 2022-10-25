@@ -8,6 +8,12 @@ from numpy import ndarray
 from torch.multiprocessing import Queue, Process
 import torch
 
+# Set of classes and methods for training a vanilla 'Auxiliary' model
+# This refers to training a solution of two separate models for one
+# environment
+#
+# EXPERIMENTAL and may not be supported any longer.
+
 
 class AuxiliaryAlgo:
     @abstractmethod
