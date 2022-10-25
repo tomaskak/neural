@@ -84,8 +84,6 @@ class VanillaGradient(AuxiliaryAlgo):
         if not self._test:
             self._last_obs_action = (observation, action)
 
-        # print(f"aux_action={action}")
-
         return action.cpu().numpy()
 
     def tag_last_action(self, id: int):

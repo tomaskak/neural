@@ -73,7 +73,8 @@ class NormalModel(Model):
         """
         actions = []
         log_probs = []
-        # Iterate over each pair of mu and sigma.
+        # Iterate over each pair of mu and sigma, assumes that each pair of two outputs
+        # are one mu and sigma.
         for i in range(len(norm_params[0]) // 2):
             first = i * 2
             mu = norm_params[:, first]
@@ -97,6 +98,7 @@ class NormalModel(Model):
             actions.append(action.reshape(-1, 1))
 
         actions = torch.cat(actions, dim=-1)
+
         log_prob = None
         for lp in log_probs:
             if log_prob is None:
