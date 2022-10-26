@@ -107,6 +107,8 @@ class NormalModel(Model):
                 log_prob += lp
 
         if self._tanh_active:
+            # Important correction to the log probability of action when
+            # resulting vaue is passed through a tanh activation!
             tanh_correction = -2 * (
                 torch.log(torch.tensor(2.0))
                 - actions

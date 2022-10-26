@@ -9,6 +9,10 @@ from ..tools.timer import timer
 
 
 class ExpReplay:
+    """
+    ExpReplay buffer impemented as a list of numpy array.
+    """
+
     def __init__(self, N: int, dtypes: list):
         assert isinstance(N, int) and N > 0, "bad N"
         assert isinstance(dtypes, list), "bad dtypes"
@@ -49,6 +53,11 @@ class ExpReplay:
 
 
 class Buffers(ABC):
+    """
+    Base class for properties of a set of buffers, defines required attributes
+    to be supported by derived classes.
+    """
+
     def __init__(
         self, size: int, partitions: int, dtype: str = "f", elem_parts: list = list([1])
     ):
@@ -89,6 +98,10 @@ class Buffers(ABC):
 
 
 class OneSimpleBuffer:
+    """
+    Simply a buffer backed by an array.
+    """
+
     def __init__(self, dtype: str, default_value, size: int):
         self._max_elem = -1
         self._index = 0
@@ -127,6 +140,11 @@ class OneSimpleBuffer:
 
 
 class OneSharedBuffer:
+    """
+    A buffer backed by a shared Array object.
+    Entering and exiting this object's context locks the array's data.
+    """
+
     def __init__(self, dtype: str, size: int):
         self._max_elem = Value("Q", lock=True)
         self._index = Value("Q", lock=True)
@@ -184,6 +202,7 @@ class SharedBuffers(Buffers):
         self, size: int, partitions: int, dtype: str = "f", elem_parts: list = list([1])
     ):
         super().__init__(size, partitions, dtype, elem_parts)
+
         # contains (idx, max_elem, buffer) for each partition
         self._buffers = [
             OneSharedBuffer(dtype, self._part_size * self._elem_size)
@@ -200,6 +219,10 @@ def read_data(path: str, dtype: str, columns: tuple[int, int]):
 
 
 class StaticBuffersFromFile(Buffers):
+    """
+    This is if data comes from a file rather than written element by element via the ReplayBuffer's interface.
+    """
+
     def __init__(
         self,
         path: str,
@@ -230,6 +253,11 @@ class StaticBuffersFromFile(Buffers):
 
 
 class SplitExpReplayReader:
+    """
+    For sampling from two different groups of buffers,
+    will enforce a % of samples from one group in a sample.
+    """
+
     def __init__(
         self,
         buffers_one: Buffers,
@@ -251,7 +279,6 @@ class SplitExpReplayReader:
 
         self._pct_one -= self._decrement
 
-        # print(f"sample_one={sample_one}, sample_two={sample_two}")
         return [
             np.concatenate((one, two), axis=0)
             for one, two in zip(sample_one, sample_two)
@@ -273,6 +300,10 @@ class ExpReplayCore:
 
 
 class ExpReplayReader(ExpReplayCore):
+    """
+    Reader interface for Replaybuffer
+    """
+
     def __init__(self, buffers: Buffers):
         super().__init__(buffers)
 
@@ -326,6 +357,10 @@ class ExpReplayReader(ExpReplayCore):
 
 
 class ExpReplayWriter(ExpReplayCore):
+    """
+    Writer interface for Replaybuffer
+    """
+
     def __init__(self, buffers: Buffers):
         super().__init__(buffers)
 
