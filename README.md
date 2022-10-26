@@ -1,19 +1,38 @@
-# neural
+This repo contains a work-in-progress set of features for training NNs in RL.
+It is alot of custom implementations for the purpose of learning.
+
+The primary algorithm implemented is Soft Actor-Critic (SAC) and uses multprocessing to split work as follows.
+```
+Base task - creates subtasks, then generates training data and periodically tests the model. (generation and test will be split out in the future)
+ReplayStore - takes new observations and writes them to a replay buffer in shared memory.
+ReplaySample - creates mini-batches of data by sampling the replay buffer and pushes them to training task.
+Train - Pulls mini batches from the queue as available and runs SAC update repeatedly (updates shmem actor model used in test/explore after each update)
+
+
+Base --> [state,action,reward,etc] --> ReplayStore.    ______SHMEM_______
+  |                                       |           |                  |
+  | (uses actor)                          | (push)    |    ReplayBuffer  |       ReplaySample --> [ mini-batch ] --> Trainer (updates actor)           
+  |_______________________________________|___________|       Actor      |___________|
+                                                      |__________________| (reads from replay)
+```
+
+# Package layout
+## neural
 python package for neural net training modules
 
-## util
+### util
 This namespace contains strctures and logic that is used in training but no AI-specific
 such as replay buffers.
 
-## tools
+### tools
 This namespace contains tools for training neural nets such as:
 * Parallelization
 * GPU/CPU Support
 
-## model
+### model
 This namespace contains shared code for building reusable models.
 
-## algos
+### algos
 This namespace contains implementations of specific algorithms making use of the code available in model.
 
 ## Dependency Chain
